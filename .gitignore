@@ -1,0 +1,29 @@
+# Ambientes Virtuais Python e Cache
+.venv/
+venv/
+env/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Arquivos de configura��es e vari�veis de ambiente sens�veis
+.env
+.env.*
+config.py
+
+# Pastas de dados e sa�das do projeto
+input/
+output/
+docs/
+
+# Arquivos de texto, planilhas e documentos (Evitar dados sens�veis)
+*.txt
+*.json
+*.xlsx
+*.xls
+*.csv
+*.docx
+*.doc
+*.pdf
+*.log

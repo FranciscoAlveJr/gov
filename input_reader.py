@@ -1,7 +1,9 @@
 import pandas as pd
-from config import INPUT_FILE
+from config import INPUT_DIR
+from glob import glob
+import os
 
-def read_input_data(filepath=INPUT_FILE):
+def read_input_data(filepath=INPUT_DIR):
     """
     Lê a planilha de origem e retorna uma lista de dicionários.
     As colunas esperadas são:
@@ -10,7 +12,15 @@ def read_input_data(filepath=INPUT_FILE):
     'PETICIONANTE', 'CRIADOR', 'DATA DE INCLUSÃO'
     """
     try:
-        df = pd.read_excel(filepath)
+        # Procurar o arquivo excel na pasta input
+        arquivos = glob(os.path.join(filepath, "*.xlsx"))
+        file = arquivos[0] if arquivos else None
+
+        if not file:
+            print("Nenhum arquivo Excel encontrado na pasta de input.")
+            return []
+
+        df = pd.read_excel(file)
         # Preencher valores nulos com string vazia para facilitar validações
         df = df.fillna("")
         

@@ -34,3 +34,9 @@ docs/
 
 # Exceções (Forçar o Git a subir esses arquivos)
 !data/version.txt
+
+dist/
+build/
+*.egg-info/
+*.spec
+

@@ -10,6 +10,21 @@ from playwright_stealth import Stealth
 class LoginError(Exception):
     pass
 
+def obter_caminho_chrome_local():
+    """
+    Busca o executável do Google Chrome na máquina do cliente, 
+    independentemente de onde foi instalado.
+    """
+    caminhos_possiveis = [
+        r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+        r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+        os.path.expandvars(r"%LOCALAPPDATA%\Google\Chrome\Application\chrome.exe")
+    ]
+    for caminho in caminhos_possiveis:
+        if os.path.exists(caminho):
+            return caminho
+    raise Exception("Google Chrome não encontrado no sistema. É necessário instalá-lo para rodar o bot.")
+
 def login_e_extrair_tokens(cpf, senha, headless=False):
     """
     Acessa o site do meu.inss.gov.br, realiza o login pelo gov.br usando CPF e senha,
@@ -24,8 +39,12 @@ def login_e_extrair_tokens(cpf, senha, headless=False):
 
     # Configuração do caminho da extensão
     # A extensão DEVE estar "descompactada", ou seja, ser uma pasta contendo o "manifest.json" e os arquivos da extensão.
-    # Não use arquivos .crx, o Playwright só carrega pastas (unpacked extension).
-    caminho_base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    import sys
+    if getattr(sys, 'frozen', False):
+        caminho_base = os.path.dirname(sys.executable)
+    else:
+        caminho_base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        
     extensao_path = os.path.join(caminho_base, "extensions", "captcha_solver")
 
     # Inicializar Playwright
@@ -43,8 +62,10 @@ def login_e_extrair_tokens(cpf, senha, headless=False):
         # Extensões no Playwright Chrome exigem o "Persistent Context", e a janela não pode estar Headless de início
         # (se quiser rodar "focado no fundo", pode usar screen frame buffer ou o headless mode "--headless=new")
         temp_dir = tempfile.mkdtemp()
+        chrome_exe = obter_caminho_chrome_local()
+        
         context = p.chromium.launch_persistent_context(
-            executable_path=r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+            executable_path=chrome_exe,
             user_data_dir=temp_dir,
             headless=False, # <-- Extensões precisam de headless=False ou args.append('--headless=new') para funcionar bem
             args=args,

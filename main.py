@@ -17,6 +17,13 @@ def formatar_data_para_api(data_obj: date) -> str:
     return data_obj.strftime("%d-%m-%Y")
 
 def main():
+    import sys
+    
+    if getattr(sys, 'frozen', False):
+        base_dir_app = os.path.dirname(sys.executable)
+    else:
+        base_dir_app = os.path.dirname(os.path.abspath(__file__))
+
     print("========================================")
     print(" INICIANDO ROTINA DE IMPLANTAÇÃO - INSS ")
     print("========================================")
@@ -34,7 +41,7 @@ def main():
     enviar_mensagem_telegram(f"🚀 *Bot INSS Iniciado*\n\n 🖥️ Cliente/PC: `{usuario_pc}`\n⏰ Horário: {start_time_str}")
 
     # Pastas de saída
-    pasta_output = "output"
+    pasta_output = os.path.join(base_dir_app, "output")
     pasta_pdfs = os.path.join(pasta_output, "Pdfs")
     os.makedirs(pasta_pdfs, exist_ok=True)
 

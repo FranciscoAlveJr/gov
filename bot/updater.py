@@ -16,18 +16,20 @@ def check_and_update():
     Verifica se existe uma nova versão no GitHub. 
     Se existir, baixa o novo .exe, cria um .bat para substituir o arquivo em uso e reinicia o bot.
     """
+    # Se estiver rodando como .py normal (dev mode), não faz o update agressivo com .bat
+    is_exe = getattr(sys, 'frozen', False)
+    
+    if is_exe:
+        base_dir_app = os.path.dirname(sys.executable)
+    else:
+        base_dir_app = os.path.abspath(os.getcwd())
+
     # Para saber a versão atual, lemos o arquivo "version.txt" dentro da pasta "data"
     versao_local = "0.0.0"
-    caminho_versao = os.path.join("data", "version.txt")
+    caminho_versao = os.path.join(base_dir_app, "data", "version.txt")
     if os.path.exists(caminho_versao):
         with open(caminho_versao, "r") as f:
             versao_local = f.read().strip()
-            
-    print(f"Versão local: {versao_local}")
-    print("Verificando atualizações online...")
-    
-    # Se estiver rodando como .py normal (dev mode), não faz o update agressivo com .bat
-    is_exe = getattr(sys, 'frozen', False)
     
     try:
         response = requests.get(VERSION_URL, timeout=10)
@@ -47,7 +49,8 @@ def check_and_update():
                 # Baixa o novo arquivo .exe
                 exe_req = requests.get(UPDATE_URL, stream=True)
                 if exe_req.status_code == 200:
-                    with open("update_novo.exe", "wb") as f:
+                    update_exe_path = os.path.join(base_dir_app, "update_novo.exe")
+                    with open(update_exe_path, "wb") as f:
                         for chunk in exe_req.iter_content(chunk_size=8192):
                             f.write(chunk)
                     
@@ -60,7 +63,7 @@ def check_and_update():
                     echo Aguardando o bot fechar...
                     timeout /t 3 /nobreak > NUL
                     echo Substituindo arquivo...
-                    move /y "update_novo.exe" "{executavel_atual}"
+                    move /y "{update_exe_path}" "{executavel_atual}"
                     echo Reiniciando o bot...
                     start "" "{executavel_atual}"
                     echo Removendo este script...
@@ -68,7 +71,7 @@ def check_and_update():
                     """
                     
                     # Cria o arquivo .bat de atualização
-                    caminho_bat = os.path.join(os.getcwd(), "atualizar_bot.bat")
+                    caminho_bat = os.path.join(base_dir_app, "atualizar_bot.bat")
                     with open(caminho_bat, "w") as b:
                         b.write(script_bat)
                     

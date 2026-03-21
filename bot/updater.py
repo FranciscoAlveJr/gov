@@ -6,7 +6,7 @@ import subprocess
 from bot.notifier import enviar_mensagem_telegram
 
 # URL real do seu GitHub. O raw link para ler o arquivo de versão.
-VERSION_URL = "https://raw.githubusercontent.com/FranciscoAlveJr/gov/main/version.txt"
+VERSION_URL = "https://raw.githubusercontent.com/FranciscoAlveJr/gov/main/data/version.txt"
 
 # Link genérico para onde hospedaremos o .exe fixo no GitHub Releases (fase 3)
 UPDATE_URL = "https://github.com/FranciscoAlveJr/gov/releases/latest/download/Bot_INSS.exe"

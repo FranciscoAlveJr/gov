@@ -31,3 +31,6 @@ docs/
 # Scripts e agendamento locais
 *.bat
 *.xml
+
+# Exceções (Forçar o Git a subir esses arquivos)
+!data/version.txt

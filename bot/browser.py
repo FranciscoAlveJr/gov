@@ -1,6 +1,11 @@
-import time
+from time import sleep
+import random
+import os
+import tempfile
 from playwright.sync_api import sync_playwright
 from playwright.sync_api import Request
+from playwright.sync_api import TimeoutError
+from playwright_stealth import Stealth
 
 class LoginError(Exception):
     pass
@@ -17,19 +22,41 @@ def login_e_extrair_tokens(cpf, senha, headless=False):
     if not cpf_str or not senha_str:
         raise ValueError("CPF ou Senha vazio")
 
+    # Configuração do caminho da extensão
+    # A extensão DEVE estar "descompactada", ou seja, ser uma pasta contendo o "manifest.json" e os arquivos da extensão.
+    # Não use arquivos .crx, o Playwright só carrega pastas (unpacked extension).
+    caminho_base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    extensao_path = os.path.join(caminho_base, "extensions", "captcha_solver")
+
     # Inicializar Playwright
     args = [
         '--start-maximized',
         '--disable-blink-features=AutomationControlled'
-        ]
-    with sync_playwright() as p:
-        browser = p.chromium.launch(headless=headless, args=args)
+    ]
+    
+    # Se a pasta da extensão existir, adiciona aos argumentos
+    if os.path.exists(extensao_path):
+        args.append(f"--disable-extensions-except={extensao_path}")
+        args.append(f"--load-extension={extensao_path}")
 
-        context = browser.new_context(
+    with Stealth().use_sync(sync_playwright()) as p:
+        # Extensões no Playwright Chrome exigem o "Persistent Context", e a janela não pode estar Headless de início
+        # (se quiser rodar "focado no fundo", pode usar screen frame buffer ou o headless mode "--headless=new")
+        temp_dir = tempfile.mkdtemp()
+        context = p.chromium.launch_persistent_context(
+            executable_path=r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+            user_data_dir=temp_dir,
+            headless=False, # <-- Extensões precisam de headless=False ou args.append('--headless=new') para funcionar bem
+            args=args,
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
             no_viewport=True,
         )
-        page = context.new_page()
+        
+        # Como o launch_persistent_context já devolve um "context", e ele tem 1 página padrão criada
+        page = context.pages[0] if context.pages else context.new_page()
+        client = context.new_cdp_session(page)
+        
+        # Aplicando máscaras de detecção antibot do stealth
 
         try:
             print(f"[{cpf_str}] Acessando portal Meu INSS...")
@@ -45,18 +72,32 @@ def login_e_extrair_tokens(cpf, senha, headless=False):
             print(f"[{cpf_str}] Redirecionando para gov.br...")
             page.wait_for_selector('input#accountId')
 
-            # Preencher CPF
+            # Preencher CPF de forma mais lenta, aleatória e humana
             print(f"[{cpf_str}] Preenchendo CPF...")
-            page.fill('input#accountId', cpf_str)
+            cpf_locator = page.locator('input#accountId')
+            cpf_locator.click()
+            sleep(random.uniform(0.3, 0.8))
+            for char in cpf_str:
+                cpf_locator.press_sequentially(char)
+                sleep(random.uniform(0.05, 0.25))
+            
+            sleep(random.uniform(0.5, 1.5))
             page.click('button#enter-account-id')
 
             # Aguardar campo de senha
             page.wait_for_selector('input#password')
-            time.sleep(1) # Pequena pausa para evitar bloqueio / comportar-se mais como humano
+            sleep(random.uniform(1.5, 3.0)) # Pausa aleatória para transição de tela
 
-            # Preencher Senha
+            # Preencher Senha de forma mais lenta, aleatória e humana
             print(f"[{cpf_str}] Preenchendo Senha...")
-            page.fill('input#password', senha_str)
+            senha_locator = page.locator('input#password')
+            senha_locator.click()
+            sleep(random.uniform(0.3, 0.8))
+            for char in senha_str:
+                senha_locator.press_sequentially(char)
+                sleep(random.uniform(0.05, 0.25))
+                
+            sleep(random.uniform(0.5, 1.5))
 
             # ======== MUDANÇA ENTRA AQUI ========
             bearer_token = None
@@ -89,6 +130,14 @@ def login_e_extrair_tokens(cpf, senha, headless=False):
 
             page.click('button#submit-button')
 
+            try:
+                page.wait_for_selector('.br-message.warning', timeout=5000)
+                error_text = page.locator('.br-message.warning').inner_text()
+                raise LoginError(f"Erro no login: {error_text}")        
+            except TimeoutError:
+                # Se deu timeout procurando mensagem de erro, significa que provavelmente o login avançou
+                pass
+
             # Aguardar o login concluir e voltar para a página do INSS
             print(f"[{cpf_str}] Aguardando autenticação e interceptando o tráfego do navegador...")
             
@@ -99,9 +148,7 @@ def login_e_extrair_tokens(cpf, senha, headless=False):
                 if error_msg:
                     texto_erro = error_msg.inner_text()
                     raise LoginError(f"Erro no login: {texto_erro}")
-            except Exception as e:
-                if isinstance(e, LoginError):
-                    raise e
+            except TimeoutError:
                 # Se deu timeout procurando erro, significa que provavelmente o login avançou
                 pass
 
@@ -138,4 +185,5 @@ def login_e_extrair_tokens(cpf, senha, headless=False):
             print(f"[{cpf_str}] Falha durante o processo: {e}")
             return False
         finally:
-            browser.close()
+            if 'context' in locals():
+                context.close()

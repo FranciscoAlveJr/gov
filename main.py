@@ -1,5 +1,7 @@
 import os
 import time
+import sqlite3
+import pandas as pd
 from datetime import datetime, date
 from dateutil.relativedelta import relativedelta
 
@@ -8,6 +10,8 @@ from bot.browser import login_e_extrair_tokens, LoginError
 from bot.api_client import APIClient
 from bot.parser import analisar_historico_creditos
 from bot.report_generator import gerar_relatorio_final
+from bot.notifier import enviar_mensagem_telegram
+from bot.updater import check_and_update
 
 def formatar_data_para_api(data_obj: date) -> str:
     return data_obj.strftime("%d-%m-%Y")
@@ -17,8 +21,17 @@ def main():
     print(" INICIANDO ROTINA DE IMPLANTAÇÃO - INSS ")
     print("========================================")
     
+    # Verifica por atualizações (Fase 2)
+    try:
+        check_and_update()
+    except Exception as e:
+        print(f"Aviso de atualização falhou: {e}")
+        
     start_time_obj = datetime.now()
     start_time_str = start_time_obj.strftime("%H:%Mh")
+    
+    usuario_pc = os.environ.get("USERNAME", "Desconhecido")
+    enviar_mensagem_telegram(f"🚀 *Bot INSS Iniciado*\n\n 🖥️ Cliente/PC: `{usuario_pc}`\n⏰ Horário: {start_time_str}")
 
     # Pastas de saída
     pasta_output = "output"
@@ -34,10 +47,57 @@ def main():
         "sem_senha": 0
     }
 
+    # Configurar Banco de Dados
+    db_path = os.path.join(pasta_output, "temp_resultados.db")
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS resultados (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            CONSULTA TEXT,
+            CLIENTE TEXT,
+            CPF TEXT,
+            DATA TEXT,
+            VALOR REAL,
+            BANCO TEXT,
+            PROCESSO TEXT,
+            TIPO_DE_PROCESSO TEXT,
+            GRUPO_DE_PROCESSO TEXT,
+            ESFERA TEXT,
+            PARCEIRO TEXT,
+            LIDER TEXT,
+            PETICIONANTE TEXT,
+            DATA_DE_INCLUSAO TEXT,
+            IMPLANTACAO TEXT,
+            PAB TEXT
+        )
+    ''')
+    conn.commit()
+
     # 1. Ler dados da entrada
     print("Lendo planilha de entrada...")
     clientes = read_input_data()
-    print(f"Total de registros a processar: {len(clientes)}")
+    total_clientes = len(clientes)
+    
+    # Recupera a quantidade de processados no banco de dados
+    cursor.execute("SELECT COUNT(*) FROM resultados")
+    qtd_processados = cursor.fetchone()[0]
+
+    if qtd_processados > 0:
+        print(f"\n=> ATENÇÃO: Retomada inteligente iniciada! {qtd_processados} registros já encontrados no banco de dados local.")
+        # Atualiza a contagem das estatísticas para que o relatório feche a matemática
+        cursor.execute("SELECT CONSULTA, COUNT(*) FROM resultados GROUP BY CONSULTA")
+        for status, count in cursor.fetchall():
+            if status == "Sucesso":
+                estatisticas["sucesso"] = count
+            elif status == "Senha Não Confere":
+                estatisticas["senha_errada"] = count
+            elif status == "Senha Não Fornecida":
+                estatisticas["sem_senha"] = count
+            elif status == "Falha na extração":
+                estatisticas["falha_extracao"] = count
+                
+    print(f"Total de registros na planilha: {total_clientes} | Restantes na fila: {max(0, total_clientes - qtd_processados)}")
 
     dados_finais = []
 
@@ -49,9 +109,11 @@ def main():
     str_fim = formatar_data_para_api(data_fim)
 
     # 2. Processar cada cliente
-    for idx, cliente in enumerate(clientes, 1):
+    # O slice [qtd_processados:] pula os N primeiros registros já salvos no DB
+    for idx, cliente in enumerate(clientes[qtd_processados:], start=qtd_processados + 1):
         nome_cliente = str(cliente.get("CLIENTE", f"Desconhecido_{idx}"))
         cpf = str(cliente.get("CPF", "")).strip().replace(".", "").replace("-", "")
+        cpf = cpf.zfill(11)  # Garante que o CPF tenha 11 dígitos, preenchendo com zeros à esquerda
         senha = str(cliente.get("SENHA GOV", "")).strip()
         
         print(f"\n[{idx}/{len(clientes)}] Processando: {nome_cliente} | CPF: {cpf}")
@@ -132,26 +194,96 @@ def main():
             estatisticas["falha_extracao"] += 1
             
         finally:
-            dados_finais.append(dado_saida)
+            # Salvar no banco de dados local
+            valor_numerico = dado_saida.get("VALOR", 0.0)
+            if not isinstance(valor_numerico, (int, float)):
+                valor_numerico = 0.0
+                
+            cursor.execute('''
+                INSERT INTO resultados (
+                    CONSULTA, CLIENTE, CPF, DATA, VALOR, BANCO, PROCESSO,
+                    TIPO_DE_PROCESSO, GRUPO_DE_PROCESSO, ESFERA, PARCEIRO,
+                    LIDER, PETICIONANTE, DATA_DE_INCLUSAO, IMPLANTACAO, PAB
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (
+                str(dado_saida.get("CONSULTA", "")),
+                str(dado_saida.get("CLIENTE", "")),
+                str(dado_saida.get("CPF", "")),
+                str(dado_saida.get("DATA", "")),
+                valor_numerico,
+                str(dado_saida.get("BANCO", "")),
+                str(dado_saida.get("PROCESSO", "")),
+                str(dado_saida.get("TIPO DE PROCESSO", "")),
+                str(dado_saida.get("GRUPO DE PROCESSO", "")),
+                str(dado_saida.get("ESFERA", "")),
+                str(dado_saida.get("PARCEIRO", "")),
+                str(dado_saida.get("LÍDER", "")),
+                str(dado_saida.get("PETICIONANTE", "")),
+                str(dado_saida.get("DATA DE INCLUSÃO", "")),
+                str(dado_saida.get("IMPLANTAÇÃO", "")),
+                str(dado_saida.get("PAB", ""))
+            ))
+            conn.commit()
             
         # Pequena pausa entre requisições para evitar rate limit massivo
         time.sleep(1)
 
-    # 3. Finalizar execução e gerar relatorios
-    print("\nProcessamento concluído. Gerando relatórios...")
+    # 3. Ler dados usando Pandas e Finalizar execução 
+    print("\nProcessamento concluído.")
+    print("Lendo dados do Banco de Dados local e convertendo via Pandas...")
+    
+    df_resultados = pd.read_sql_query("SELECT * FROM resultados", conn)
+    conn.close()
+    
+    # Renomear colunas do BD para o padrão esperado pelo gerador de excel
+    colunas_excel = {
+        "TIPO_DE_PROCESSO": "TIPO DE PROCESSO",
+        "GRUPO_DE_PROCESSO": "GRUPO DE PROCESSO",
+        "LIDER": "LÍDER",
+        "DATA_DE_INCLUSAO": "DATA DE INCLUSÃO",
+        "IMPLANTACAO": "IMPLANTAÇÃO"
+    }
+    df_resultados.rename(columns=colunas_excel, inplace=True)
+    df_resultados.drop(columns=["id"], inplace=True, errors="ignore")
+    
+    # Converte o dataframe de volta para uma lista de dicionários pro gerador_relatorio_final
+    dados_finais = df_resultados.to_dict('records')
+
+    print("Gerando relatórios...")
     end_time_str = datetime.now().strftime("%H:%Mh")
     estatisticas["end_time"] = end_time_str
     
-    # try:
-    gerar_relatorio_final(dados_finais, estatisticas, pasta_pdfs, pasta_output)
-    # except Exception as ex:
-    #     print(f"Erro Crítico ao gerar o relatório final em Excel/Zip: {ex}")
+    try:
+        gerar_relatorio_final(dados_finais, estatisticas, pasta_pdfs, pasta_output)
+    except Exception as ex:
+        print(f"Erro Crítico ao gerar o relatório final em Excel/Zip: {ex}")
+        
+    # Deletando arquivo Database Temporário
+    if os.path.exists(db_path):
+        try:
+            os.remove(db_path)
+            print(f"Banco de dados temporário '{db_path}' apagado com sucesso.")
+        except Exception as e:
+            print(f"Não foi possível apagar o banco de dados temporário: {e}")
     
     print("\nResumo da Operação:")
     print(f"Sucesso: {estatisticas['sucesso']}")
     print(f"Falhas por Senha/Login: {estatisticas['senha_errada']}")
     print(f"Falha de Extração Técnica: {estatisticas['falha_extracao']}")
     print(f"Faltaram Senhas: {estatisticas['sem_senha']}")
+    
+    msg_fim = (
+        f"✅ *Rotina Concluída*\n\n"
+        f"🖥️ Cliente/PC: `{usuario_pc}`\n"
+        f"⏱️ Início: {estatisticas['start_time']} | Fim: {estatisticas['end_time']}\n"
+        f"📊 *Resumo da Operação:*\n"
+        f"🟢 Sucessos: {estatisticas['sucesso']}\n"
+        f"🔴 Senhas Erradas: {estatisticas['senha_errada']}\n"
+        f"🟡 Falhas Extração: {estatisticas['falha_extracao']}\n"
+        f"⚪ Faltaram Senhas: {estatisticas['sem_senha']}"
+    )
+    enviar_mensagem_telegram(msg_fim)
+    
     print("\nOperação concluída com sucesso! Verifique a pasta 'output'.")
 
 if __name__ == "__main__":

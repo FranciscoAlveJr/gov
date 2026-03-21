@@ -21,7 +21,15 @@ def read_input_data(filepath=INPUT_DIR):
             return []
 
         df = pd.read_excel(file)
-        # Preencher valores nulos com string vazia para facilitar validações
+        
+        # Formatar a DATA DE INCLUSÃO para string dd/mm/yyyy (se houver a coluna)
+        if 'DATA DE INCLUSÃO' in df.columns:
+            # Converte para datetime de forma segura
+            col_data = pd.to_datetime(df['DATA DE INCLUSÃO'], errors='coerce')
+            # Formata apenas os valores não nulos (NaT)
+            df['DATA DE INCLUSÃO'] = col_data.dt.strftime('%d/%m/%Y')
+
+        # Preencher valores nulos (incluindo datas que falharam no parse) com string vazia
         df = df.fillna("")
         
         # Converter os dados para uma lista de dicionários (uma linha = um dit)

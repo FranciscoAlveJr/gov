@@ -27,3 +27,7 @@ docs/
 *.doc
 *.pdf
 *.log
+
+# Scripts e agendamento locais
+*.bat
+*.xml

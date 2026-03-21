@@ -4,6 +4,8 @@ import zipfile
 from datetime import datetime, date
 import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment
+from openpyxl.utils import get_column_letter
+
 
 def obter_nome_arquivo_saida(pasta_destino):
     """
@@ -92,14 +94,25 @@ def gerar_relatorio_final(dados_processados, estatisticas, pasta_destino_pdfs, p
     data_hoje = date.today()
     
     for row_idx, dado in enumerate(dados_processados, start=2):
+        
+        # Trata o CPF para ser apenas números em formato de texto (evita formatação de milhar do excel)
+        cpf_val = str(dado.get("CPF", "")).replace(".0", "")  # Se o pandas tiver lido como float
+        for char in ".,- ":
+            cpf_val = cpf_val.replace(char, "")
+            
+        # Trata o PROCESSO para texto (remove ".0" caso tenha sido lido como número)
+        processo_val = str(dado.get("PROCESSO", "")).replace(".0", "").strip()
+        if processo_val == "nan" or processo_val == "None":
+            processo_val = ""
+
         row_data = [
             dado.get("CONSULTA", ""),
             dado.get("CLIENTE", ""),
-            dado.get("CPF", ""),
+            cpf_val,
             dado.get("DATA", ""),  # Referente à "Previsão de pagamento" que vem do parser
             f'R$ {dado.get("VALOR", 0.0):.2f}'.replace('.', ','),
             dado.get("BANCO", ""),
-            dado.get("PROCESSO", ""),
+            processo_val,
             dado.get("TIPO DE PROCESSO", ""),
             dado.get("GRUPO DE PROCESSO", ""),
             dado.get("ESFERA", ""),
@@ -142,6 +155,25 @@ def gerar_relatorio_final(dados_processados, estatisticas, pasta_destino_pdfs, p
         # Aplica a cor em toda a linha
         for col_idx in range(1, len(colunas_header) + 1):
             ws_consulta.cell(row=row_idx, column=col_idx).font = cor_linha
+
+    # Ajuste automático do tamanho das colunas (limite máximo de 50)
+    for ws in [ws_resumo, ws_consulta]:
+        for col in ws.columns:
+            max_length = 0
+            column_letter = col[0].column_letter
+            for cell in col:
+                try:
+                    if cell.value:
+                        # Considera quebras de linha caso existam
+                        linhas_celula = str(cell.value).split('\n')
+                        for linha in linhas_celula:
+                            max_length = max(max_length, len(linha))
+                except:
+                    pass
+            
+            # Adiciona um pequeno espaçamento (+2) e limita o tamanho a 50
+            adjusted_width = min(max_length + 2, 50)
+            ws.column_dimensions[column_letter].width = adjusted_width
 
     wb.save(caminho_excel)
     print(f"Relatório excel gerado com sucesso: {caminho_excel}")

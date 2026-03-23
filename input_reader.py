@@ -18,7 +18,10 @@ def read_input_data(filepath=INPUT_DIR):
 
         if not file:
             print("Nenhum arquivo Excel encontrado na pasta de input.")
-            return []
+            print("[ Aviso: O bot precisa de planilha da pasta 'input' para rodar. Coloque o arquivo lá e execute novamente. ]")
+            input("\nPressione ENTER para sair...")
+            import sys
+            sys.exit(0)
 
         df = pd.read_excel(file)
         

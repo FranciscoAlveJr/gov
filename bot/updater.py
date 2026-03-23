@@ -63,22 +63,31 @@ def check_and_update():
                     
                     # Nome do executável atual (geralmente Bot_INSS.exe)
                     executavel_atual = sys.executable
+                    nome_exe = os.path.basename(executavel_atual)
                     
-                    # Precisamos remover as indentações do script .bat para garantir que comandos não falhem
+                    # Vamos criar um script indestrutível com tentativas de substituição repetidas (loop :RETRY)
+                    # Forçamos a morte do bot antigo se ele estiver grudado na RAM travando o arquivo
                     script_bat = f"""@echo off
 title Atualizando Bot INSS...
-echo Aguardando o bot fechar completamente...
-timeout /t 5 /nobreak > NUL
+echo Aguardando o bot fechar...
+timeout /t 3 /nobreak > NUL
 
-echo Substituindo arquivo...
+:: Força a morte do processo antigo (incluindo o bootloader do PyInstaller) para liberar o arquivo
+taskkill /F /IM "{nome_exe}" /T > NUL 2>&1
+
+:RETRY
+echo Tentando substituir o arquivo...
 move /y "{update_exe_path}" "{executavel_atual}"
-timeout /t 3 /nobreak > NUL
+IF ERRORLEVEL 1 (
+    echo Arquivo ainda em uso pelo Windows. Tentando novamente em 2 segundos...
+    timeout /t 2 /nobreak > NUL
+    goto RETRY
+)
 
-echo Reiniciando o bot...
+echo Atualizacao concluida com sucesso! Reiniciando...
 start "" /d "{base_dir_app}" "{executavel_atual}"
-timeout /t 3 /nobreak > NUL
 
-echo Removendo este script...
+echo Tudo pronto! Esta janela sera fechada.
 (goto) 2>nul ^& del "%~f0"
 """
                     

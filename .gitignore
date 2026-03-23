@@ -32,6 +32,11 @@ docs/
 *.bat
 *.xml
 
+# PyInstaller
+build/
+dist/
+*.spec
+
 # Exceções (Forçar o Git a subir esses arquivos)
 !data/version.txt
 

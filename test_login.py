@@ -78,4 +78,5 @@ def main():
         print(f"\n=> FALHA DE LOGIN: Não foi possível completar o login para {cliente_nome}")
 
 if __name__ == "__main__":
-    main()
+    # main()
+    print(0x00000008)

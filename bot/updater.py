@@ -57,26 +57,34 @@ def check_and_update():
                     print("Download concluído. Fechando para atualizar...")
                     enviar_mensagem_telegram("✅ Download finalizado. Reiniciando o bot com a nova versão.")
                     
+                    # 1. Atualizar o arquivo version.txt localmente para a nova versão
+                    with open(caminho_versao, "w") as f:
+                        f.write(versao_remota)
+                    
                     # Nome do executável atual (geralmente Bot_INSS.exe)
                     executavel_atual = sys.executable
+                    
+                    # Precisamos remover as indentações do script .bat para garantir que comandos não falhem
                     script_bat = f"""@echo off
-                    echo Aguardando o bot fechar...
-                    timeout /t 3 /nobreak > NUL
-                    echo Substituindo arquivo...
-                    move /y "{update_exe_path}" "{executavel_atual}"
-                    echo Reiniciando o bot...
-                    start "" "{executavel_atual}"
-                    echo Removendo este script...
-                    del "%~f0"
-                    """
+title Atualizando Bot INSS...
+echo Aguardando o bot fechar...
+timeout /t 3 /nobreak > NUL
+echo Substituindo arquivo...
+move /y "{update_exe_path}" "{executavel_atual}"
+echo Reiniciando o bot...
+start "" "{executavel_atual}"
+echo Removendo este script...
+del "%~f0"
+"""
                     
                     # Cria o arquivo .bat de atualização
                     caminho_bat = os.path.join(base_dir_app, "atualizar_bot.bat")
-                    with open(caminho_bat, "w") as b:
+                    with open(caminho_bat, "w", encoding="utf-8") as b:
                         b.write(script_bat)
                     
-                    # Executa o .bat de forma independente e encerra o bot
-                    subprocess.Popen(caminho_bat, shell=True)
+                    # Executa o .bat usando o comando nativo do Windows (os.startfile)
+                    # Isso garante 100% que o processo nasce independente do Python e não morre no exit()
+                    os.startfile(caminho_bat)
                     sys.exit(0)
                 else:
                     print("Erro ao tentar baixar o arquivo executável da atualização.")

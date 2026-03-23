@@ -1,12 +1,17 @@
 import requests
 import json
+import os
+from dotenv import load_dotenv
+
+# Carrega as variáveis de ambiente do arquivo .env
+load_dotenv()
 
 # ==========================================
 # CONFIGURAÇÕES DO TELEGRAM
 # Você vai preencher esses dados no Passo 2!
 # ==========================================
-TELEGRAM_BOT_TOKEN = "8583980792:AAFvZQzF8yrfnf8FIOjIPKSX8JXigNOovgQ"
-TELEGRAM_CHAT_ID = "1686078073"
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "SEU_TOKEN_AQUI")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "SEU_CHAT_ID_AQUI")
 
 def enviar_mensagem_telegram(mensagem):
     """

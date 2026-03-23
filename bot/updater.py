@@ -84,10 +84,13 @@ IF ERRORLEVEL 1 (
     goto RETRY
 )
 
-echo Atualizacao concluida com sucesso! Reiniciando...
-start "" /d "{base_dir_app}" "{executavel_atual}"
+echo ==============================================================
+echo ATUALIZACAO CONCLUIDA! NOVA VERSAO INSTALADA.
+echo POR FAVOR, ABRA O BOT INSS NOVAMENTE PARA UTILIZA-LO (OU AGUARDE O AGENDADOR DE TAREFAS).
+echo ==============================================================
+echo Pressione qualquer tecla para sair desta tela de atualizacao...
+pause > NUL
 
-echo Tudo pronto! Esta janela sera fechada.
 (goto) 2>nul ^& del "%~f0"
 """
                     

@@ -1,6 +1,9 @@
 import requests
 import json
 import os
+import logging
+
+logger = logging.getLogger("BotINSS")
 from dotenv import load_dotenv
 
 # Carrega as variáveis de ambiente do arquivo .env
@@ -18,7 +21,7 @@ def enviar_mensagem_telegram(mensagem):
     Envia uma mensagem de texto para o chat configurado no Telegram.
     """
     if TELEGRAM_BOT_TOKEN == "SEU_TOKEN_AQUI" or TELEGRAM_CHAT_ID == "SEU_CHAT_ID_AQUI":
-        print("[Log] Telegram não configurado. Mensagem ignorada.")
+        logger.info("[Log] Telegram não configurado. Mensagem ignorada.")
         return False
 
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
@@ -36,13 +39,42 @@ def enviar_mensagem_telegram(mensagem):
     try:
         response = requests.post(url, data=json.dumps(payload), headers=headers)
         if response.status_code == 200:
-            print("[Log] Notificação enviada ao Telegram com sucesso.")
+            logger.info("[Log] Notificação enviada ao Telegram com sucesso.")
             return True
         else:
-            print(f"[Log] Falha ao enviar para o Telegram: {response.text}")
+            logger.info(f"[Log] Falha ao enviar para o Telegram: {response.text}")
             return False
     except Exception as e:
-        print(f"[Log] Erro de conexão com o Telegram: {e}")
+        logger.info(f"[Log] Erro de conexão com o Telegram: {e}")
+        return False
+
+def enviar_documento_telegram(caminho_arquivo, caption=""):
+    """
+    Envia um arquivo físico (.log, .zip, .pdf) para o Telegram.
+    """
+    if TELEGRAM_BOT_TOKEN == "SEU_TOKEN_AQUI" or TELEGRAM_CHAT_ID == "SEU_CHAT_ID_AQUI":
+        return False
+        
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendDocument"
+    
+    data = {
+        "chat_id": TELEGRAM_CHAT_ID,
+        "caption": caption,
+        "parse_mode": "HTML"
+    }
+
+    try:
+        with open(caminho_arquivo, 'rb') as f:
+            files = {'document': f}
+            response = requests.post(url, data=data, files=files)
+            if response.status_code == 200:
+                logger.info(f"[Log] Arquivo {os.path.basename(caminho_arquivo)} enviado com sucesso.")
+                return True
+            else:
+                logger.info(f"[Log] Falha ao enviar arquivo para o Telegram: {response.text}")
+                return False
+    except Exception as e:
+        logger.info(f"[Log] Erro ao enviar documento para o Telegram: {e}")
         return False
 
 def enviar_resumo_execucao(nome_cliente, estatisticas, arquivo_zip=None):

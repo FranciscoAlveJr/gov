@@ -1,6 +1,9 @@
 from curl_cffi import requests
 import os
+import logging
 from bot.browser import LoginError
+
+logger = logging.getLogger("BotINSS")
 
 class APIClient:
     def __init__(self):
@@ -38,10 +41,11 @@ class APIClient:
     def get_historico_creditos(self, cpf: str, data_inicio: str, data_fim: str) -> dict:
         url = f"{self.base_url}/hiscreServices/historicocreditos/{cpf}/{data_inicio}/{data_fim}"
         
-        print(f"[{cpf}] Chamando JSON do Hiscre: {url}")
+        logger.info(f"[{cpf}] Chamando JSON do Hiscre: {url}")
         res = self.session.get(url)
         
         if res.status_code == 401:
+            logger.error(f"[{cpf}] Sessão expirou ou não autorizada para ler Hiscre.")
             raise LoginError("Sessão expirou ou não autorizada para ler Hiscre.")
             
         res.raise_for_status()
@@ -50,10 +54,11 @@ class APIClient:
     def download_pdf_historico(self, cpf: str, data_inicio: str, data_fim: str, output_path: str) -> str:
         url = f"{self.base_url}/hiscreServices/historicocreditosPdf/{cpf}/{data_inicio}/{data_fim}"
         
-        print(f"[{cpf}] Chamando PDF do Hiscre: {url}")
+        logger.info(f"[{cpf}] Chamando PDF do Hiscre: {url}")
         res = self.session.get(url)
         
         if res.status_code == 401:
+            logger.error(f"[{cpf}] Sessão expirou ou não autorizada para download de PDF.")
             raise LoginError("Sessão expirou ou não autorizada para download de PDF.")
             
         res.raise_for_status()

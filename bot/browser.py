@@ -6,6 +6,9 @@ from playwright.sync_api import sync_playwright
 from playwright.sync_api import Request
 from playwright.sync_api import TimeoutError
 from playwright_stealth import Stealth
+import logging
+
+logger = logging.getLogger("BotINSS")
 
 class LoginError(Exception):
     pass
@@ -80,7 +83,7 @@ def login_e_extrair_tokens(cpf, senha, headless=False):
         # Aplicando máscaras de detecção antibot do stealth
 
         try:
-            print(f"[{cpf_str}] Acessando portal Meu INSS...")
+            logger.info(f"[{cpf_str}] Acessando portal Meu INSS...")
             page.goto("https://meu.inss.gov.br/#/login", wait_until="networkidle")
 
             # Aguardar o botão de "Entrar com gov.br" e clicar
@@ -90,11 +93,11 @@ def login_e_extrair_tokens(cpf, senha, headless=False):
             btn_entrar.click()
 
             # Aguardar redirecionamento para sso.acesso.gov.br
-            print(f"[{cpf_str}] Redirecionando para gov.br...")
+            logger.info(f"[{cpf_str}] Redirecionando para gov.br...")
             page.wait_for_selector('input#accountId')
 
             # Preencher CPF de forma mais lenta, aleatória e humana
-            print(f"[{cpf_str}] Preenchendo CPF...")
+            logger.info(f"[{cpf_str}] Preenchendo CPF...")
             cpf_locator = page.locator('input#accountId')
             cpf_locator.click()
             sleep(random.uniform(0.3, 0.8))
@@ -110,7 +113,7 @@ def login_e_extrair_tokens(cpf, senha, headless=False):
             sleep(random.uniform(1.5, 3.0)) # Pausa aleatória para transição de tela
 
             # Preencher Senha de forma mais lenta, aleatória e humana
-            print(f"[{cpf_str}] Preenchendo Senha...")
+            logger.info(f"[{cpf_str}] Preenchendo Senha...")
             senha_locator = page.locator('input#password')
             senha_locator.click()
             sleep(random.uniform(0.3, 0.8))
@@ -143,7 +146,7 @@ def login_e_extrair_tokens(cpf, senha, headless=False):
                                 data = request.response().json()
                                 token = data.get("miToken", "")
                         except Exception as err:
-                            print(f"Erro ao ler JSON da API: {err}")
+                            logger.info(f"Erro ao ler JSON da API: {err}")
 
             # Registramos o escutador ANTES de clicar em 'Entrar'
             # page.on("response", intercept_response)
@@ -160,7 +163,7 @@ def login_e_extrair_tokens(cpf, senha, headless=False):
                 pass
 
             # Aguardar o login concluir e voltar para a página do INSS
-            print(f"[{cpf_str}] Aguardando autenticação e interceptando o tráfego do navegador...")
+            logger.info(f"[{cpf_str}] Aguardando autenticação e interceptando o tráfego do navegador...")
             
             # Aqui pode aparecer tela de confirmar autorização (dependendo da conta) ou erro de senha.
             # Verificando se apareceu mensagem de erro longo após o submit
@@ -181,14 +184,14 @@ def login_e_extrair_tokens(cpf, senha, headless=False):
             # Não precisamos mais navegar para o extrato se a intenção era só pegar o token!
             # Mas se quiser, pode deixar o page.goto pra lá
 
-            print(f"[{cpf_str}] Coletando token e ID da sessão interceptando o tráfego do navegador...")
+            logger.info(f"[{cpf_str}] Coletando token e ID da sessão interceptando o tráfego do navegador...")
 
             reqs = page.requests()
 
             intercept_response(reqs)
             
             if not token:
-                print(f"[{cpf_str}] ATENÇÃO: Token não encontrado na intercepção.")
+                logger.info(f"[{cpf_str}] ATENÇÃO: Token não encontrado na intercepção.")
             
             # Precisamos extrair todos os cookies de sessão
             cookies = context.cookies()
@@ -199,11 +202,11 @@ def login_e_extrair_tokens(cpf, senha, headless=False):
                 "user_agent": page.evaluate("navigator.userAgent")
             }
             
-            print(f"[{cpf_str}] Login concluído, dados de sessão coletados. Token mitoken obtido: {'Sim' if token else 'Não'}")
+            logger.info(f"[{cpf_str}] Login concluído, dados de sessão coletados. Token mitoken obtido: {'Sim' if token else 'Não'}")
             return auth_dict
 
         except Exception as e:
-            print(f"[{cpf_str}] Falha durante o processo: {e}")
+            logger.info(f"[{cpf_str}] Falha durante o processo: {e}")
             return False
         finally:
             if 'context' in locals():

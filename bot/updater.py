@@ -1,5 +1,8 @@
 import os
 import sys
+import logging
+
+logger = logging.getLogger("BotINSS")
 import time
 import requests
 import subprocess
@@ -39,11 +42,11 @@ def check_and_update():
             
             if versao_remota != versao_local:
                 msg = f"🔄 *Atualização Encontrada!*\nVersão local: `{versao_local}`\nNova versão: `{versao_remota}`\n\n⬇️ Baixando atualização..."
-                print(msg)
+                logger.info(msg)
                 enviar_mensagem_telegram(msg)
                 
                 if not is_exe:
-                    print("\n[MODO DESENVOLVEDOR] Atualização ignorada, pois você está rodando o script .py diretamente. O update funciona no programa compilado (.exe).")
+                    logger.info("\n[MODO DESENVOLVEDOR] Atualização ignorada, pois você está rodando o script .py diretamente. O update funciona no programa compilado (.exe).")
                     return
                 
                 # Baixa o novo arquivo .exe
@@ -54,7 +57,7 @@ def check_and_update():
                         for chunk in exe_req.iter_content(chunk_size=8192):
                             f.write(chunk)
                     
-                    print("Download concluído. Fechando para atualizar...")
+                    logger.info("Download concluído. Fechando para atualizar...")
                     enviar_mensagem_telegram("✅ Download finalizado. Reiniciando o bot com a nova versão.")
                     
                     # 1. Atualizar o arquivo version.txt localmente para a nova versão
@@ -104,11 +107,11 @@ pause > NUL
                     os.startfile(caminho_bat)
                     sys.exit(0)
                 else:
-                    print("Erro ao tentar baixar o arquivo executável da atualização.")
+                    logger.info("Erro ao tentar baixar o arquivo executável da atualização.")
                     enviar_mensagem_telegram("⚠️ *Erro na atualização*: Não foi possível baixar o novo arquivo do GitHub (Status != 200).")
             else:
-                print("✅ O bot já está na versão mais recente.")
+                logger.info("✅ O bot já está na versão mais recente.")
         else:
-            print("Não foi possível verificar a versão (Status != 200).")
+            logger.info("Não foi possível verificar a versão (Status != 200).")
     except Exception as e:
-        print(f"Erro ao verificar atualizações: {e}")
+        logger.info(f"Erro ao verificar atualizações: {e}")

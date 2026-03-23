@@ -2,6 +2,10 @@ import pandas as pd
 from config import INPUT_DIR
 from glob import glob
 import os
+import sys
+import logging
+
+logger = logging.getLogger("BotINSS")
 
 def read_input_data(filepath=INPUT_DIR):
     """
@@ -17,7 +21,7 @@ def read_input_data(filepath=INPUT_DIR):
         file = arquivos[0] if arquivos else None
 
         if not file:
-            print("Nenhum arquivo Excel encontrado na pasta de input.")
+            logger.error("Nenhum arquivo Excel encontrado na pasta de input.")
             print("[ Aviso: O bot precisa de planilha da pasta 'input' para rodar. Coloque o arquivo lá e execute novamente. ]")
             input("\nPressione ENTER para sair...")
             import sys
@@ -39,5 +43,5 @@ def read_input_data(filepath=INPUT_DIR):
         records = df.to_dict(orient="records")
         return records
     except Exception as e:
-        print(f"Erro ao ler planilha: {e}")
+        logger.exception(f"Erro ao ler planilha: {e}")
         return []

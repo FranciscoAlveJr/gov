@@ -293,5 +293,12 @@ def main():
     
     print("\nOperação concluída com sucesso! Verifique a pasta 'output'.")
 
+    print("\n========================================")
+    print(" FIM DA ROTINA DE IMPLANTAÇÃO - INSS ")
+    print("========================================")
+
+    print("\nPressione Enter para sair...")
+    input()
+
 if __name__ == "__main__":
     main()

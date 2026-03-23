@@ -4,7 +4,7 @@ import os
 from dotenv import load_dotenv
 
 # Carrega as variáveis de ambiente do arquivo .env
-load_dotenv()
+load_dotenv('data/.env')
 
 # ==========================================
 # CONFIGURAÇÕES DO TELEGRAM

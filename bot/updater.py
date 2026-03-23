@@ -68,16 +68,18 @@ def check_and_update():
                     script_bat = f"""@echo off
 title Atualizando Bot INSS...
 echo Aguardando o bot fechar completamente...
-timeout /t 4 /nobreak > NUL
+timeout /t 5 /nobreak > NUL
+
 echo Substituindo arquivo...
 move /y "{update_exe_path}" "{executavel_atual}"
-timeout /t 2 /nobreak > NUL
+timeout /t 3 /nobreak > NUL
+
 echo Reiniciando o bot...
-cd /d "{base_dir_app}"
-start "" "{executavel_atual}"
-timeout /t 1 /nobreak > NUL
+start "" /d "{base_dir_app}" "{executavel_atual}"
+timeout /t 3 /nobreak > NUL
+
 echo Removendo este script...
-del "%~f0"
+(goto) 2>nul ^& del "%~f0"
 """
                     
                     # Cria o arquivo .bat de atualização

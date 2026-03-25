@@ -46,3 +46,5 @@ build/
 *.spec
 *.exe
 
+
+data/chrome_profile/

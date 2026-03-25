@@ -6,7 +6,7 @@ from datetime import datetime, date
 from dateutil.relativedelta import relativedelta
 
 from input_reader import read_input_data
-from bot.browser import login_e_extrair_tokens, LoginError
+from bot.browser import login_e_extrair_tokens, fechar_browser, LoginError
 from bot.api_client import APIClient
 from bot.parser import analisar_historico_creditos
 from bot.report_generator import gerar_relatorio_final
@@ -311,9 +311,10 @@ def main():
         
     enviar_documento_telegram(caminho_log, caption=msg_fim)
     
-    print("\nOperação concluída com sucesso! Verifique a pasta 'output'.")
-    print("=" * 40)
+    # Fechar navegador no final
+    fechar_browser()
 
+    print("\nOperação concluída com sucesso! Verifique a pasta 'output'.")
     print("\nPressione Enter para sair...")
     input()
 

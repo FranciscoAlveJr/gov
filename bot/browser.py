@@ -16,6 +16,31 @@ logger = logging.getLogger("BotINSS")
 class LoginError(Exception):
     pass
 
+def obter_diretorios_base():
+    import sys
+
+    if getattr(sys, 'frozen', False):
+        base_dir_externo = os.path.dirname(sys.executable)
+        base_dir_embutido = getattr(sys, '_MEIPASS', base_dir_externo)
+    else:
+        base_dir_externo = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        base_dir_embutido = base_dir_externo
+
+    return base_dir_externo, base_dir_embutido
+
+def resolver_caminho_recurso(*partes):
+    base_dir_externo, base_dir_embutido = obter_diretorios_base()
+
+    caminho_externo = os.path.join(base_dir_externo, *partes)
+    if os.path.exists(caminho_externo):
+        return caminho_externo
+
+    caminho_embutido = os.path.join(base_dir_embutido, *partes)
+    if os.path.exists(caminho_embutido):
+        return caminho_embutido
+
+    return caminho_externo
+
 def obter_caminho_chrome_local():
     """
     Busca o executável do Google Chrome na máquina do cliente, 
@@ -62,13 +87,8 @@ def obter_pagina_persistente(headless=False):
     if _browser_page and not _browser_page.is_closed():
         return _browser_page, _browser_context
 
-    import sys
-    if getattr(sys, 'frozen', False):
-        caminho_base = os.path.dirname(sys.executable)
-    else:
-        caminho_base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        
-    extensao_path = os.path.join(caminho_base, "extensions", "capsolver")
+    caminho_base, _ = obter_diretorios_base()
+    extensao_path = resolver_caminho_recurso("extensions", "capsolver")
 
     args = [
         '--start-maximized',
@@ -76,8 +96,11 @@ def obter_pagina_persistente(headless=False):
     ]
     
     if os.path.exists(extensao_path):
+        logger.info(f"Carregando extensão CapSolver de: {extensao_path}")
         args.append(f"--disable-extensions-except={extensao_path}")
         args.append(f"--load-extension={extensao_path}")
+    else:
+        logger.warning(f"Extensão CapSolver não encontrada em: {extensao_path}")
 
     _playwright_cm = Stealth().use_sync(sync_playwright())
     _playwright_instance = _playwright_cm.__enter__()

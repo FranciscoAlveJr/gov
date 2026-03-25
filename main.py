@@ -24,8 +24,8 @@ def main():
     
     if getattr(sys, 'frozen', False):
         base_dir_app = os.path.dirname(sys.executable)
-        browsers_path_externo = os.path.join(base_dir_app, "chrome")
-        browsers_path_embutido = os.path.join(sys._MEIPASS, "chrome")
+        browsers_path_externo = os.path.join(base_dir_app, "ms-playwright")
+        browsers_path_embutido = os.path.join(sys._MEIPASS, "ms-playwright")
 
         if os.path.exists(browsers_path_externo):
             os.environ["PLAYWRIGHT_BROWSERS_PATH"] = browsers_path_externo

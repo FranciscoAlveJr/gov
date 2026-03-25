@@ -48,3 +48,5 @@ build/
 
 
 data/chrome_profile/
+ms-playwright/
+chrome/

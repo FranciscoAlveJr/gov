@@ -138,6 +138,8 @@ def main():
         ## O dict 'cliente' já tem a maioria (CLIENTE, CPF, PROCESSO, TIPO DE PROCESSO, etc...)
         dado_saida = cliente.copy()
         
+        dado_saida["CPF"] = cpf  # Sobrescreve o CPF formatado (apenas números, 11 dígitos)
+
         # Garante as colunas novas em branco, caso o python lance KeyError
         for col in ["CONSULTA", "DATA", "VALOR", "BANCO", "IMPLANTAÇÃO", "PAB"]:
             if col not in dado_saida:
@@ -180,7 +182,6 @@ def main():
             dado_saida["IMPLANTAÇÃO"] = resultado_regra["IMPLANTAÇÃO"]
             dado_saida["PAB"] = resultado_regra["PAB"]
 
-            dado_saida["CPF"] = cpf  # Garante que o CPF tenha 11 dígitos, preenchendo com zeros à esquerda
             
             if resultado_regra["IMPLANTAÇÃO"] == "ALERTA DE IMPLANTAÇÃO":
                 dado_saida["DATA"] = resultado_regra["PREVISAO_PAGAMENTO"]

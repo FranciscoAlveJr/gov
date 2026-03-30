@@ -24,13 +24,6 @@ def main():
     
     if getattr(sys, 'frozen', False):
         base_dir_app = os.path.dirname(sys.executable)
-        browsers_path_externo = os.path.join(base_dir_app, "ms-playwright")
-        browsers_path_embutido = os.path.join(sys._MEIPASS, "ms-playwright")
-
-        if os.path.exists(browsers_path_externo):
-            os.environ["PLAYWRIGHT_BROWSERS_PATH"] = browsers_path_externo
-        else:
-            os.environ["PLAYWRIGHT_BROWSERS_PATH"] = browsers_path_embutido
     else:
         base_dir_app = os.path.dirname(os.path.abspath(__file__))
 
@@ -186,6 +179,8 @@ def main():
             # Atualiza o dicionário com os resultados do parser
             dado_saida["IMPLANTAÇÃO"] = resultado_regra["IMPLANTAÇÃO"]
             dado_saida["PAB"] = resultado_regra["PAB"]
+
+            dado_saida["CPF"] = cpf  # Garante que o CPF tenha 11 dígitos, preenchendo com zeros à esquerda
             
             if resultado_regra["IMPLANTAÇÃO"] == "ALERTA DE IMPLANTAÇÃO":
                 dado_saida["DATA"] = resultado_regra["PREVISAO_PAGAMENTO"]

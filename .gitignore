@@ -50,3 +50,10 @@ build/
 data/chrome_profile/
 ms-playwright/
 chrome/
+
+*.html
+*.js
+*test*.py
+
+extensions/*
+!extensions/__init__.py

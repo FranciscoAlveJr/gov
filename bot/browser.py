@@ -16,31 +16,6 @@ logger = logging.getLogger("BotINSS")
 class LoginError(Exception):
     pass
 
-def obter_diretorios_base():
-    import sys
-
-    if getattr(sys, 'frozen', False):
-        base_dir_externo = os.path.dirname(sys.executable)
-        base_dir_embutido = getattr(sys, '_MEIPASS', base_dir_externo)
-    else:
-        base_dir_externo = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        base_dir_embutido = base_dir_externo
-
-    return base_dir_externo, base_dir_embutido
-
-def resolver_caminho_recurso(*partes):
-    base_dir_externo, base_dir_embutido = obter_diretorios_base()
-
-    caminho_externo = os.path.join(base_dir_externo, *partes)
-    if os.path.exists(caminho_externo):
-        return caminho_externo
-
-    caminho_embutido = os.path.join(base_dir_embutido, *partes)
-    if os.path.exists(caminho_embutido):
-        return caminho_embutido
-
-    return caminho_externo
-
 def obter_caminho_chrome_local():
     """
     Busca o executável do Google Chrome na máquina do cliente, 
@@ -87,8 +62,13 @@ def obter_pagina_persistente(headless=False):
     if _browser_page and not _browser_page.is_closed():
         return _browser_page, _browser_context
 
-    caminho_base, _ = obter_diretorios_base()
-    extensao_path = resolver_caminho_recurso("extensions", "capsolver")
+    import sys
+    if getattr(sys, 'frozen', False):
+        caminho_base = os.path.dirname(sys.executable)
+    else:
+        caminho_base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        
+    extensao_path = os.path.join(caminho_base, "extensions", "capsolver")
 
     args = [
         '--start-maximized',
@@ -96,11 +76,8 @@ def obter_pagina_persistente(headless=False):
     ]
     
     if os.path.exists(extensao_path):
-        logger.info(f"Carregando extensão CapSolver de: {extensao_path}")
         args.append(f"--disable-extensions-except={extensao_path}")
         args.append(f"--load-extension={extensao_path}")
-    else:
-        logger.warning(f"Extensão CapSolver não encontrada em: {extensao_path}")
 
     _playwright_cm = Stealth().use_sync(sync_playwright())
     _playwright_instance = _playwright_cm.__enter__()
@@ -108,17 +85,16 @@ def obter_pagina_persistente(headless=False):
     profile_dir = os.path.join(caminho_base, "data", "chrome_profile")
     os.makedirs(profile_dir, exist_ok=True)
     
+    chrome_exe = obter_caminho_chrome_local()
+
     _browser_context = _playwright_instance.chromium.launch_persistent_context(
         user_data_dir=profile_dir,
+        executable_path=chrome_exe,
         headless=headless,
         args=args,
-        ignore_default_args=["--disable-extensions", "--disable-component-extensions-with-background-pages"], 
-        user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        no_viewport=True,
+        ignore_default_args=["--disable-extensions", "--disable-component-extensions-with-background-pages", "--enable-automation"],
     )
-    
     _browser_page = _browser_context.pages[0] if _browser_context.pages else _browser_context.new_page()
-    
     return _browser_page, _browser_context
 
 def preparar_aba_novo_login(context, page: Page):
@@ -167,8 +143,16 @@ def deslogar_se_necessario(page: Page):
                 page.wait_for_url("**/login**", timeout=15000)
                 page.wait_for_timeout(2000)
         else:
-            # Não tem avatar, provavel que não esteja logado
-            pass
+            try:
+                sair_btn = page.get_by_role('button').filter(has_text="Sair do Meu INSS").first
+                if sair_btn.is_visible(timeout=2000):
+                    logger.info("Usuário logado detectado (sem avatar). Realizando logout para a próxima conta...")
+                    sair_btn.click()
+                    logger.info("Logout realizado com sucesso.")
+                    page.wait_for_url("**/login**", timeout=15000)
+                    page.wait_for_timeout(2000)
+            except TimeoutError:
+                pass
     except Exception as e:
         logger.debug(f"Processo de verificação de logout concluído (Nenhum usuário estava logado): {e}")
 
@@ -276,7 +260,18 @@ def login_e_extrair_tokens(cpf: str, senha: str, headless: bool = False):
 
         page.wait_for_url("**/meu.inss.gov.br/**", timeout=30000)
         page.wait_for_load_state("networkidle")
-        
+
+        try:
+            logger.info(f"[{cpf_str}] Aguardando 5s para verificar ausência de tela de erro de cadastro...")
+            erro_cadastro = page.wait_for_selector('text="Dados cadastrais diferentes ou incompletos"', timeout=5000)
+            if erro_cadastro:
+                logger.warning(f"[{cpf_str}] Foi detectada a tela de erro de Dados Cadastrais. Aguardando 2s para confirmação...")
+                page.wait_for_timeout(2000)
+                raise LoginError("Dados cadastrais diferentes ou incompletos.")
+        except TimeoutError:
+            # Não apareceu a tela de erro dentro dos 5 segundos, fluxo segue normal.
+            pass
+
         logger.info(f"[{cpf_str}] Coletando token e ID da sessão interceptando o tráfego do navegador...")
 
         reqs = page.requests()

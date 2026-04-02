@@ -307,6 +307,9 @@ def login_e_extrair_tokens(cpf: str, senha: str, headless: bool = False):
         logger.info(f"[{cpf_str}] Login concluído, dados de sessão coletados. Token mitoken obtido: {'Sim' if token else 'Não'}")
         return auth_dict
 
+    except PageDataError as pa:
+        raise PageDataError
+
     except Exception as e:
         logger.info(f"[{cpf_str}] Falha durante o processo: {e}")
         return False

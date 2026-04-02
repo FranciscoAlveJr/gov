@@ -100,6 +100,7 @@ def gerar_relatorio_final(dados_processados, estatisticas, pasta_destino_pdfs, p
         cpf_val = str(dado.get("CPF", "")).replace(".0", "")  # Se o pandas tiver lido como float
         for char in ".,- ":
             cpf_val = cpf_val.replace(char, "")
+        cpf_val = cpf_val.zfill(11)  # Garante que tenha 11 dígitos, preenchendo com zeros à esquerda se necessário
             
         # Trata o PROCESSO para texto (remove ".0" caso tenha sido lido como número)
         processo_val = str(dado.get("PROCESSO", "")).replace(".0", "").strip()

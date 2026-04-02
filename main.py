@@ -48,7 +48,15 @@ def main():
     # Pastas de saída
     pasta_output = os.path.join(base_dir_app, "output")
     pasta_pdfs = os.path.join(pasta_output, "Pdfs")
-    os.makedirs(pasta_pdfs, exist_ok=True)
+
+    if os.path.exists(pasta_pdfs):
+        try:
+            shutil.rmtree(pasta_pdfs)
+            logger.debug(f"Pasta de PDFs '{pasta_pdfs}' limpa no início da execução.")
+        except Exception as e:
+            logger.warning(f"Não foi possível limpar a pasta de PDFs no início: {e}")
+
+    os.makedirs(pasta_pdfs)
 
     estatisticas = {
         "start_time": start_time_str,

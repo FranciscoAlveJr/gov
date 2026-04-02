@@ -16,6 +16,9 @@ logger = logging.getLogger("BotINSS")
 class LoginError(Exception):
     pass
 
+class PageDataError(Exception):
+    pass
+
 def obter_caminho_chrome_local():
     """
     Busca o executável do Google Chrome na máquina do cliente, 
@@ -178,7 +181,7 @@ def login_e_extrair_tokens(cpf: str, senha: str, headless: bool = False):
         page = preparar_aba_novo_login(context, page)
         
         logger.info(f"[{cpf_str}] Acessando portal Meu INSS...")
-        page.goto("https://meu.inss.gov.br/#/login", wait_until="networkidle")
+        page.goto("https://meu.inss.gov.br/#/login")
 
         # Aguardar o botão de "Entrar com gov.br" e clicar
         btn_entrar = page.locator('button#main-content', has_text="Entrar com gov.br")
@@ -259,7 +262,7 @@ def login_e_extrair_tokens(cpf: str, senha: str, headless: bool = False):
             pass
 
         page.wait_for_url("**/meu.inss.gov.br/**", timeout=30000)
-        page.wait_for_load_state("networkidle")
+        page.wait_for_load_state("networkidle", timeout=120000)
 
         try:
             logger.info(f"[{cpf_str}] Aguardando 5s para verificar ausência de tela de erro de cadastro...")
@@ -267,7 +270,7 @@ def login_e_extrair_tokens(cpf: str, senha: str, headless: bool = False):
             if erro_cadastro:
                 logger.warning(f"[{cpf_str}] Foi detectada a tela de erro de Dados Cadastrais. Aguardando 2s para confirmação...")
                 page.wait_for_timeout(2000)
-                raise LoginError("Dados cadastrais diferentes ou incompletos.")
+                raise PageDataError("Dados cadastrais diferentes ou incompletos.")
         except TimeoutError:
             # Não apareceu a tela de erro dentro dos 5 segundos, fluxo segue normal.
             pass

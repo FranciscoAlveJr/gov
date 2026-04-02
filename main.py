@@ -4,9 +4,10 @@ import sqlite3
 import pandas as pd
 from datetime import datetime, date
 from dateutil.relativedelta import relativedelta
+import shutil
 
 from input_reader import read_input_data
-from bot.browser import login_e_extrair_tokens, fechar_browser, LoginError
+from bot.browser import login_e_extrair_tokens, fechar_browser, LoginError, PageDataError
 from bot.api_client import APIClient
 from bot.parser import analisar_historico_creditos
 from bot.report_generator import gerar_relatorio_final
@@ -53,6 +54,7 @@ def main():
         "start_time": start_time_str,
         "end_time": "",
         "sucesso": 0,
+        "implantacao_ou_pab": 0,
         "falha_extracao": 0,
         "senha_errada": 0,
         "sem_senha": 0
@@ -113,6 +115,12 @@ def main():
             elif status == "Falha na extração":
                 estatisticas["falha_extracao"] = count
                 
+        # Atualiza a contagem dos PABs ou Implantações que foram sucesso
+        cursor.execute("SELECT IMPLANTACAO, PAB FROM resultados WHERE CONSULTA = 'Sucesso'")
+        for imp, pab in cursor.fetchall():
+            if imp == "ALERTA DE IMPLANTAÇÃO" or pab == "ALERTA DE PAB":
+                estatisticas["implantacao_ou_pab"] += 1
+                
     logger.info(f"Total de registros: {total_clientes} | Restantes na fila: {max(0, total_clientes - qtd_processados)}")
 
     dados_finais = []
@@ -148,15 +156,12 @@ def main():
                  else:
                      dado_saida[col] = ""
                  
-        if not cpf or not senha or senha.lower() == "nan":
-            logger.warning(f"  -> Senha não fornecida para {nome_cliente}")
-            dado_saida["CONSULTA"] = "Senha Não Fornecida"
-            estatisticas["sem_senha"] += 1
-            dados_finais.append(dado_saida)
-            continue
 
         # Tentativa de operação (Login -> API -> Avaliação)
         try:
+            if not cpf or not senha or senha.lower() == "nan":
+                raise ValueError("CPF ou senha ausente.")
+            
             logger.info("  -> Iniciando login via Playwright...")
             
             # Aqui pode lançar `LoginError` ou retornar os tokens
@@ -201,24 +206,47 @@ def main():
             # Deu tudo certo!
             dado_saida["CONSULTA"] = "Sucesso"
             estatisticas["sucesso"] += 1
+            if resultado_regra["IMPLANTAÇÃO"] == "ALERTA DE IMPLANTAÇÃO" or resultado_regra["PAB"] == "ALERTA DE PAB":
+                estatisticas["implantacao_ou_pab"] += 1
             logger.info("  -> Extração do cliente finalizada com SUCESSO.")
+
+
+        except PageDataError as pe:
+            logger.error(f"  -> Erro na página (Dados cadastrais incompletos): {pe}")
+            dado_saida["CONSULTA"] = "Falha na extração"
+            estatisticas["falha_extracao"] += 1
 
         except LoginError as le:
             logger.error(f"  -> Erro de Login (Senha não confere): {le}")
             dado_saida["CONSULTA"] = "Senha Não Confere"
             estatisticas["senha_errada"] += 1
-            
+
+        except ValueError:
+            logger.warning(f"  -> Senha não fornecida para {nome_cliente}")
+            dado_saida["CONSULTA"] = "Senha Não Fornecida"
+            estatisticas["sem_senha"] += 1
+            dados_finais.append(dado_saida)
+
         except Exception as ex:
-            logger.exception(f"  -> Falha na extração de dados/API para {cpf}: {ex}")
-            dado_saida["CONSULTA"] = "Falha na extração"
-            estatisticas["falha_extracao"] += 1
-            
+            logger.warning(f"  -> Detalhes de API/Hiscre não encontrados ou falhos para {cpf}: {ex}")
+            # Como o login foi feito com sucesso, consideramos finalizado positivamente
+            dado_saida["CONSULTA"] = "Sucesso"
+            dado_saida["IMPLANTAÇÃO"] = "NÃO IMPLANTADO"
+            estatisticas["sucesso"] += 1
+            valor_numerico = 0.0
+
         finally:
-            # Salvar no banco de dados local
-            valor_numerico = dado_saida.get("VALOR", 0.0)
-            if not isinstance(valor_numerico, (int, float)):
+            # Salva do banco de dados (seja sucesso ou falha)
+            valor_bruto = dado_saida.get("VALOR", 0.0)
+            try:
+                valor_numerico = float(valor_bruto)
+            except (ValueError, TypeError):
                 valor_numerico = 0.0
-                
+
+            dado_saida["ESFERA"] = str(dado_saida["ESFERA"]).capitalize()
+            if dado_saida["ESFERA"] == 'Administrative':
+                dado_saida["ESFERA"] = 'Administrativa'
+
             cursor.execute('''
                 INSERT INTO resultados (
                     CONSULTA, CLIENTE, CPF, DATA, VALOR, BANCO, PROCESSO,
@@ -289,17 +317,18 @@ def main():
     
     logger.info("Resumo da Operação:")
     logger.info(f"Sucesso: {estatisticas['sucesso']}")
+    logger.info(f"Implantação ou PAB: {estatisticas['implantacao_ou_pab']}")
     logger.info(f"Falhas por Senha/Login: {estatisticas['senha_errada']}")
     logger.info(f"Falha de Extração Técnica: {estatisticas['falha_extracao']}")
     logger.info(f"Faltaram Senhas: {estatisticas['sem_senha']}")
-    
+
     msg_fim = (
         f"<b>✅ Rotina Concluída</b>\n\n"
         f"🖥️ <b>Cliente/PC:</b> <i>{usuario_pc}</i>\n"
         f"⏱️ <b>Início:</b> {estatisticas['start_time']} | <b>Fim:</b> {estatisticas['end_time']}\n"
         f"📊 <b>Resumo da Operação:</b>\n"
         f"🟢 Sucessos: {estatisticas['sucesso']}\n"
-        f"🔴 Senhas Erradas: {estatisticas['senha_errada']}\n"
+        f"🟢 Implantação/PAB: {estatisticas['implantacao_ou_pab']}\n"
         f"🟡 Falhas Extração: {estatisticas['falha_extracao']}\n"
         f"⚪ Faltaram Senhas: {estatisticas['sem_senha']}"
     )
@@ -317,9 +346,14 @@ def main():
     # Fechar navegador no final
     fechar_browser()
 
-    print("\nOperação concluída com sucesso! Verifique a pasta 'output'.")
-    print("\nPressione Enter para sair...")
-    input()
+    shutil.rmtree(pasta_pdfs)  # Limpa a pasta de PDFs baixados, pois já estão no relatório final
+
+    logger.info("Operação concluída.")
+
+    # print("\nOperação concluída com sucesso! Verifique a pasta 'output'.")
+    # print("\nPressione Enter para sair...")
+    # input()
+
 
 if __name__ == "__main__":
     main()

@@ -204,18 +204,21 @@ def main():
             logger.info(f"  -> Resultado obtido: {resultado_regra['IMPLANTAÇÃO']} | {resultado_regra['PAB']}")
 
             # SÓ BAIXA O PDF SE DEU CERTO A CONSULTA! (Como definido Sucesso)
-            logger.info("  -> Efetuando o download do PDF de Extrato...")
-            nome_seguro = "".join([c for c in nome_cliente if c.isalpha() or c.isdigit() or c==' ']).rstrip()
-            nome_pdf = f"{nome_seguro}.pdf"
-            caminho_pdf = os.path.join(pasta_pdfs, nome_pdf)
-            
-            api.download_pdf_historico(cpf, str_inicio, str_fim, caminho_pdf)
             
             # Deu tudo certo!
             dado_saida["CONSULTA"] = "Sucesso"
             estatisticas["sucesso"] += 1
+
             if resultado_regra["IMPLANTAÇÃO"] == "ALERTA DE IMPLANTAÇÃO" or resultado_regra["PAB"] == "ALERTA DE PAB":
+                logger.info("  -> Efetuando o download do PDF de Extrato...")
+                nome_seguro = "".join([c for c in nome_cliente if c.isalpha() or c.isdigit() or c==' ']).rstrip()
+                nome_pdf = f"{nome_seguro}.pdf"
+                caminho_pdf = os.path.join(pasta_pdfs, nome_pdf)
+                
+                api.download_pdf_historico(cpf, str_inicio, str_fim, caminho_pdf)
+
                 estatisticas["implantacao_ou_pab"] += 1
+            
             logger.info("  -> Extração do cliente finalizada com SUCESSO.")
 
 

@@ -50,6 +50,7 @@ def gerar_relatorio_final(dados_processados, estatisticas, pasta_destino_pdfs, p
     # Contar PDFs na pasta
     qtd_pdfs = len([f for f in os.listdir(pasta_destino_pdfs) if f.endswith('.pdf')])
     sucessos = estatisticas.get('sucesso', 0)
+    implantacao_ou_pab = estatisticas.get('implantacao_ou_pab', 0)
 
     linhas_resumo = [
         ["Data:", datetime.now().strftime("%d/%m/%Y")],
@@ -57,7 +58,7 @@ def gerar_relatorio_final(dados_processados, estatisticas, pasta_destino_pdfs, p
         ["Horário fim:", estatisticas.get('end_time', '')],
         [""],
         ["1 - Sucesso:", sucessos],
-        ["2 - Implantação ou PAB:", estatisticas.get('implantacao_ou_pab', 0)],
+        ["2 - Implantação ou PAB:", implantacao_ou_pab],
         ["3 - Falha na extração:", estatisticas.get('falha_extracao', 0)],
         ["4 - Senha Não Confere:", estatisticas.get('senha_errada', 0)],
         ["5 - Senha Não Fornecida:", estatisticas.get('sem_senha', 0)],
@@ -70,10 +71,10 @@ def gerar_relatorio_final(dados_processados, estatisticas, pasta_destino_pdfs, p
     # Regra de Cores do Resumo (Detalhe 6):
     # Se "Pdfs na pasta" == "Sucesso", a fonte fica verde, senão vermelha.
     # No nosso array acima, Sucesso tá na linha 5 e Pdfs na linha 10 (1-based index)
-    cor_resumo_pdfs = fonte_verde if qtd_pdfs == sucessos else fonte_vermelha
+    cor_resumo_pdfs = fonte_verde if qtd_pdfs == implantacao_ou_pab else fonte_vermelha
     
-    ws_resumo.cell(row=5, column=1).font = cor_resumo_pdfs
-    ws_resumo.cell(row=5, column=2).font = cor_resumo_pdfs
+    ws_resumo.cell(row=6, column=1).font = cor_resumo_pdfs
+    ws_resumo.cell(row=6, column=2).font = cor_resumo_pdfs
     ws_resumo.cell(row=10, column=1).font = cor_resumo_pdfs
     ws_resumo.cell(row=10, column=2).font = cor_resumo_pdfs
 

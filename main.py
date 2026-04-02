@@ -356,11 +356,11 @@ def main():
 
     shutil.rmtree(pasta_pdfs)  # Limpa a pasta de PDFs baixados, pois já estão no relatório final
 
-    logger.info("Operação concluída.")
+    # logger.info("Operação concluída.")
 
-    # print("\nOperação concluída com sucesso! Verifique a pasta 'output'.")
-    # print("\nPressione Enter para sair...")
-    # input()
+    print("\nOperação concluída com sucesso! Verifique a pasta 'output'.")
+    print("\nPressione Enter para sair...")
+    input()
 
 
 if __name__ == "__main__":

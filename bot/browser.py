@@ -180,44 +180,56 @@ def login_e_extrair_tokens(cpf: str, senha: str, headless: bool = False):
         # Reabre aba limpa para o novo ciclo de captcha/login sem fechar o navegador
         page = preparar_aba_novo_login(context, page)
         
-        logger.info(f"[{cpf_str}] Acessando portal Meu INSS...")
-        page.goto("https://meu.inss.gov.br/#/login")
+        tentativas_login = 0
+        while True:
+            try:
+                logger.info(f"[{cpf_str}] Acessando portal Meu INSS...")
+                page.goto("https://meu.inss.gov.br/#/login")
 
-        # Aguardar o botão de "Entrar com gov.br" e clicar
-        btn_entrar = page.locator('button#main-content', has_text="Entrar com gov.br")
-        btn_entrar.wait_for(state="visible", timeout=10000)
-        btn_entrar.click()
+                # Aguardar o botão de "Entrar com gov.br" e clicar
+                btn_entrar = page.locator('button#main-content', has_text="Entrar com gov.br")
+                btn_entrar.wait_for(state="visible", timeout=10000)
+                btn_entrar.click()
 
-        # Aguardar redirecionamento para sso.acesso.gov.br
-        logger.info(f"[{cpf_str}] Redirecionando para gov.br...")
-        page.wait_for_selector('input#accountId')
+                # Aguardar redirecionamento para sso.acesso.gov.br
+                logger.info(f"[{cpf_str}] Redirecionando para gov.br...")
+                page.wait_for_selector('input#accountId')
 
-        # Preencher CPF de forma mais lenta, aleatória e humana
-        logger.info(f"[{cpf_str}] Preenchendo CPF...")
-        cpf_locator = page.locator('input#accountId')
-        cpf_locator.click()
-        sleep(random.uniform(0.3, 0.8))
-        for char in cpf_str:
-            cpf_locator.press_sequentially(char)
-            sleep(random.uniform(0.05, 0.25))
-        
-        sleep(random.uniform(0.5, 1.5))
-        page.click('button#enter-account-id')
+                # Preencher CPF de forma mais lenta, aleatória e humana
+                logger.info(f"[{cpf_str}] Preenchendo CPF...")
+                cpf_locator = page.locator('input#accountId')
+                cpf_locator.click()
+                sleep(random.uniform(0.3, 0.8))
+                for char in cpf_str:
+                    cpf_locator.press_sequentially(char)
+                    sleep(random.uniform(0.05, 0.25))
+                
+                sleep(random.uniform(0.5, 1.5))
+                page.click('button#enter-account-id')
 
-        # Aguardar campo de senha
-        page.wait_for_selector('input#password', timeout=120000)
-        sleep(random.uniform(1.5, 3.0))
+                # Aguardar campo de senha
+                page.wait_for_selector('input#password', timeout=120000)
+                sleep(random.uniform(1.5, 3.0))
 
-        # Preencher Senha de forma mais lenta, aleatória e humana
-        logger.info(f"[{cpf_str}] Preenchendo Senha...")
-        senha_locator = page.locator('input#password')
-        senha_locator.click()
-        sleep(random.uniform(0.3, 0.8))
-        for char in senha_str:
-            senha_locator.press_sequentially(char)
-            sleep(random.uniform(0.05, 0.25))
-            
-        sleep(random.uniform(0.5, 1.5))
+                # Preencher Senha de forma mais lenta, aleatória e humana
+                logger.info(f"[{cpf_str}] Preenchendo Senha...")
+                senha_locator = page.locator('input#password')
+                senha_locator.click()
+                sleep(random.uniform(0.3, 0.8))
+                for char in senha_str:
+                    senha_locator.press_sequentially(char)
+                    sleep(random.uniform(0.05, 0.25))
+                    
+                sleep(random.uniform(0.5, 1.5))
+
+                break  # Sai do loop se chegou até aqui sem erros de timeout
+            except TimeoutError:
+                logger.warning(f"[{cpf_str}] Timeout durante o processo de login. Tentando novamente...")
+                tentativas_login += 1
+                if tentativas_login >= 3:
+                    raise PageDataError("Múltiplas tentativas de login falharam por demorarem demais.")
+                page.wait_for_timeout(2000)  # Espera um pouco antes de tentar novamente
+                continue
 
         bearer_token = None
         token = None

@@ -309,6 +309,10 @@ def login_e_extrair_tokens(cpf: str, senha: str, headless: bool = False):
 
     except PageDataError as pa:
         raise PageDataError
+    
+    except TimeoutError as te:
+        logger.warning(f"[{cpf_str}] Demora excessiva (Timeout) de rede ou do Gov.br: {te}")
+        raise PageDataError("Falha de conexão / Timeout")
 
     except Exception as e:
         logger.info(f"[{cpf_str}] Falha durante o processo: {e}")

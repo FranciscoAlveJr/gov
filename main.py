@@ -240,10 +240,8 @@ def main():
 
         except Exception as ex:
             logger.warning(f"  -> Detalhes de API/Hiscre não encontrados ou falhos para {cpf}: {ex}")
-            # Como o login foi feito com sucesso, consideramos finalizado positivamente
-            dado_saida["CONSULTA"] = "Sucesso"
-            dado_saida["IMPLANTAÇÃO"] = "NÃO IMPLANTADO"
-            estatisticas["sucesso"] += 1
+            dado_saida["CONSULTA"] = "Falha na extração"
+            estatisticas["falha_extracao"] += 1
             valor_numerico = 0.0
 
         finally:

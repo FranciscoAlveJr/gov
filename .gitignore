@@ -57,3 +57,7 @@ chrome/
 
 extensions/*
 !extensions/__init__.py
+
+Relatorio_Atualizacao_*.md
+
+Auditoria_*.md

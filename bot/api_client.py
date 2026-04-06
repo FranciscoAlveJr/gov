@@ -5,6 +5,12 @@ from bot.browser import LoginError
 
 logger = logging.getLogger("BotINSS")
 
+class APIError(Exception):
+    """Exceção customizada para erros de comunicação com as APIs do Gov.br/INSS."""
+    def __init__(self, message, status_code=None):
+        super().__init__(message)
+        self.status_code = status_code
+
 class APIClient:
     def __init__(self):
         self.session = requests.Session(impersonate="chrome120")
@@ -45,10 +51,20 @@ class APIClient:
         res = self.session.get(url)
         
         if res.status_code == 401:
-            logger.error(f"[{cpf}] Sessão expirou ou não autorizada para ler Hiscre.")
-            raise LoginError("Sessão expirou ou não autorizada para ler Hiscre.")
+            logger.error(f"[{cpf}] Sessão expirou ou não autorizada para ler Hiscre (401).")
+            raise APIError("Sessão expirou ou não autorizada para ler Hiscre.", 401)
+        elif res.status_code == 403:
+            logger.error(f"[{cpf}] Acesso Negado pelo INSS (403).")
+            raise APIError("Acesso Negado", 403)
+        elif res.status_code >= 500:
+            logger.error(f"[{cpf}] Indisponibilidade no sistema do INSS ({res.status_code}).")
+            raise APIError("Indisponibilidade no sistema do INSS", res.status_code)
             
-        res.raise_for_status()
+        try:
+            res.raise_for_status()
+        except Exception as e:
+            raise APIError(f"Erro ao obter extrato: {str(e)}", res.status_code)
+            
         return res.json()
 
     def download_pdf_historico(self, cpf: str, data_inicio: str, data_fim: str, output_path: str) -> str:
@@ -58,10 +74,22 @@ class APIClient:
         res = self.session.get(url)
         
         if res.status_code == 401:
-            logger.error(f"[{cpf}] Sessão expirou ou não autorizada para download de PDF.")
-            raise LoginError("Sessão expirou ou não autorizada para download de PDF.")
+            logger.error(f"[{cpf}] Sessão expirou ou não autorizada para download de PDF (401).")
+            raise APIError("Sessão expirou ou não autorizada para download de PDF.", 401)
+        elif res.status_code == 403:
+            logger.error(f"[{cpf}] Acesso Negado para PDF (403).")
+            raise APIError("Acesso Negado para PDF", 403)
+        elif res.status_code == 404:
+            logger.error(f"[{cpf}] PDF não encontrado (404).")
+            raise APIError("Extrato não encontrado no INSS", 404)
+        elif res.status_code >= 500:
+            logger.error(f"[{cpf}] Indisponibilidade no sistema do INSS (PDF) ({res.status_code}).")
+            raise APIError("Indisponibilidade no sistema do INSS", res.status_code)
             
-        res.raise_for_status()
+        try:
+            res.raise_for_status()
+        except Exception as e:
+            raise APIError(f"Erro ao baixar PDF: {str(e)}", res.status_code)
 
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
 

@@ -7,8 +7,8 @@ from dateutil.relativedelta import relativedelta
 import shutil
 
 from input_reader import read_input_data
-from bot.browser import login_e_extrair_tokens, fechar_browser, LoginError, PageDataError
-from bot.api_client import APIClient
+from bot.browser import login_e_extrair_tokens, fechar_browser, LoginError, PageDataError, BlockedUserError
+from bot.api_client import APIClient, APIError
 from bot.parser import analisar_historico_creditos
 from bot.report_generator import gerar_relatorio_final
 from bot.notifier import enviar_mensagem_telegram, enviar_documento_telegram
@@ -49,15 +49,6 @@ def main():
     pasta_output = os.path.join(base_dir_app, "output")
     pasta_pdfs = os.path.join(pasta_output, "Pdfs")
 
-    if os.path.exists(pasta_pdfs):
-        try:
-            shutil.rmtree(pasta_pdfs)
-            logger.debug(f"Pasta de PDFs '{pasta_pdfs}' limpa no início da execução.")
-        except Exception as e:
-            logger.warning(f"Não foi possível limpar a pasta de PDFs no início: {e}")
-
-    os.makedirs(pasta_pdfs)
-
     estatisticas = {
         "start_time": start_time_str,
         "end_time": "",
@@ -65,6 +56,7 @@ def main():
         "implantacao_ou_pab": 0,
         "falha_extracao": 0,
         "senha_errada": 0,
+        "usuario_bloqueado": 0,
         "sem_senha": 0
     }
 
@@ -109,6 +101,16 @@ def main():
     cursor.execute("SELECT COUNT(*) FROM resultados")
     qtd_processados = cursor.fetchone()[0]
 
+    if qtd_processados == 0:
+        if os.path.exists(pasta_pdfs):
+            try:
+                shutil.rmtree(pasta_pdfs)
+                logger.debug(f"Pasta de PDFs '{pasta_pdfs}' limpa no início da execução (do zero).")
+            except Exception as e:
+                logger.warning(f"Não foi possível limpar a pasta de PDFs no início: {e}")
+
+    os.makedirs(pasta_pdfs, exist_ok=True)
+
     if qtd_processados > 0:
         logger.info(f"ATENÇÃO: Retomada inteligente iniciada! {qtd_processados} registros encontrados no DB.")
         # Atualiza a contagem das estatísticas para que o relatório feche a matemática
@@ -118,10 +120,12 @@ def main():
                 estatisticas["sucesso"] = count
             elif status == "Senha Não Confere":
                 estatisticas["senha_errada"] = count
+            elif status == "Usuário Bloqueado":
+                estatisticas["usuario_bloqueado"] = count
             elif status == "Senha Não Fornecida":
                 estatisticas["sem_senha"] = count
-            elif status == "Falha na extração":
-                estatisticas["falha_extracao"] = count
+            elif status == "Falha na extração" or "Sessão" in status or "Acesso Negado" in status or "Indisponibilidade" in status:
+                estatisticas["falha_extracao"] += count
                 
         # Atualiza a contagem dos PABs ou Implantações que foram sucesso
         cursor.execute("SELECT IMPLANTACAO, PAB FROM resultados WHERE CONSULTA = 'Sucesso'")
@@ -176,12 +180,12 @@ def main():
             auth_dados = login_e_extrair_tokens(cpf, senha, headless=False) # Usando HEADLESS False pra rodar visível!
             
             if not auth_dados:
-                logger.warning("  -> Falha genérica ou erro de senha.")
-                dado_saida["CONSULTA"] = "Senha Não Confere"
-                estatisticas["senha_errada"] += 1
+                logger.warning("  -> Falha genérica na navegação ou queda de conexão.")
+                dado_saida["CONSULTA"] = "Falha na extração"
+                estatisticas["falha_extracao"] += 1
                 dados_finais.append(dado_saida)
                 continue
-
+            
             # API Client
             logger.info("  -> Conectando nas APIs do portal Meu INSS...")
             api = APIClient()
@@ -212,9 +216,13 @@ def main():
             if resultado_regra["IMPLANTAÇÃO"] == "ALERTA DE IMPLANTAÇÃO" or resultado_regra["PAB"] == "ALERTA DE PAB":
                 logger.info("  -> Efetuando o download do PDF de Extrato...")
                 nome_seguro = "".join([c for c in nome_cliente if c.isalpha() or c.isdigit() or c==' ']).rstrip()
-                nome_pdf = f"{nome_seguro}.pdf"
-                caminho_pdf = os.path.join(pasta_pdfs, nome_pdf)
                 
+                caminho_pdf = os.path.join(pasta_pdfs, f"{nome_seguro}.pdf")
+                contador_pdf = 2
+                while os.path.exists(caminho_pdf):
+                    caminho_pdf = os.path.join(pasta_pdfs, f"{nome_seguro} ({contador_pdf}).pdf")
+                    contador_pdf += 1
+                    
                 api.download_pdf_historico(cpf, str_inicio, str_fim, caminho_pdf)
 
                 estatisticas["implantacao_ou_pab"] += 1
@@ -231,6 +239,23 @@ def main():
             logger.error(f"  -> Erro de Login (Senha não confere): {le}")
             dado_saida["CONSULTA"] = "Senha Não Confere"
             estatisticas["senha_errada"] += 1
+
+        except BlockedUserError as be:
+            logger.error(f"  -> Erro de Login (Usuário Bloqueado/Suspenso): {be}")
+            dado_saida["CONSULTA"] = "Usuário Bloqueado"
+            estatisticas["usuario_bloqueado"] += 1
+
+        except APIError as api_err:
+            logger.error(f"  -> Erro nas chamadas de API do site (Status {api_err.status_code}): {api_err.args[0]}")
+            if api_err.status_code == 401:
+                dado_saida["CONSULTA"] = "Sessão expirou - 401 ou Não autorizado"
+            elif api_err.status_code == 403:
+                dado_saida["CONSULTA"] = "Acesso Negado (Gov.br/INSS)"
+            elif api_err.status_code and api_err.status_code >= 500:
+                dado_saida["CONSULTA"] = ("Indisponibilidade " + str(api_err.status_code))
+            else:
+                dado_saida["CONSULTA"] = "Falha na extração"
+            estatisticas["falha_extracao"] += 1
 
         except ValueError:
             logger.warning(f"  -> Senha não fornecida para {nome_cliente}")

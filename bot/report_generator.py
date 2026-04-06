@@ -61,8 +61,9 @@ def gerar_relatorio_final(dados_processados, estatisticas, pasta_destino_pdfs, p
         ["2 - Implantação ou PAB:", implantacao_ou_pab],
         ["3 - Falha na extração:", estatisticas.get('falha_extracao', 0)],
         ["4 - Senha Não Confere:", estatisticas.get('senha_errada', 0)],
-        ["5 - Senha Não Fornecida:", estatisticas.get('sem_senha', 0)],
-        ["6 - Pdfs na pasta:", qtd_pdfs]
+        ["5 - Usuário Bloqueado:", estatisticas.get('usuario_bloqueado', 0)],
+        ["6 - Senha Não Fornecida:", estatisticas.get('sem_senha', 0)],
+        ["7 - Pdfs na pasta:", qtd_pdfs]
     ]
 
     for linha in linhas_resumo:
@@ -70,13 +71,13 @@ def gerar_relatorio_final(dados_processados, estatisticas, pasta_destino_pdfs, p
     
     # Regra de Cores do Resumo (Detalhe 6):
     # Se "Pdfs na pasta" == "Sucesso", a fonte fica verde, senão vermelha.
-    # No nosso array acima, Sucesso tá na linha 5 e Pdfs na linha 10 (1-based index)
+    # No nosso array acima, Implantação ou PAB tá na linha 6 e Pdfs na linha 11 (1-based index)
     cor_resumo_pdfs = fonte_verde if qtd_pdfs == implantacao_ou_pab else fonte_vermelha
     
     ws_resumo.cell(row=6, column=1).font = cor_resumo_pdfs
     ws_resumo.cell(row=6, column=2).font = cor_resumo_pdfs
-    ws_resumo.cell(row=10, column=1).font = cor_resumo_pdfs
-    ws_resumo.cell(row=10, column=2).font = cor_resumo_pdfs
+    ws_resumo.cell(row=11, column=1).font = cor_resumo_pdfs
+    ws_resumo.cell(row=11, column=2).font = cor_resumo_pdfs
 
     # ======== ABA 2: Consulta ========
     ws_consulta = wb.create_sheet(title="Consulta")

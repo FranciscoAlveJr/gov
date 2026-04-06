@@ -16,6 +16,9 @@ logger = logging.getLogger("BotINSS")
 class LoginError(Exception):
     pass
 
+class BlockedUserError(Exception):
+    pass
+
 class PageDataError(Exception):
     pass
 
@@ -259,7 +262,13 @@ def login_e_extrair_tokens(cpf: str, senha: str, headless: bool = False):
         try:
             page.wait_for_selector('.br-message.warning', timeout=5000)
             error_text = page.locator('.br-message.warning').inner_text()
-            raise LoginError(f"Erro no login: {error_text}")        
+            error_text_lower = error_text.lower()
+            if "bloquead" in error_text_lower or "suspens" in error_text_lower:
+                raise BlockedUserError(f"Usuário Bloqueado: {error_text}")
+            elif any(kw in error_text_lower for kw in ["senha", "inválid", "incorret"]):
+                raise LoginError(f"Erro no login: {error_text}")
+            else:
+                raise PageDataError(f"Erro na página gov: {error_text}")
         except TimeoutError:
             pass
 
@@ -269,7 +278,13 @@ def login_e_extrair_tokens(cpf: str, senha: str, headless: bool = False):
             error_msg = page.wait_for_selector('div.message.error', timeout=5000)
             if error_msg:
                 texto_erro = error_msg.inner_text()
-                raise LoginError(f"Erro no login: {texto_erro}")
+                texto_erro_lower = texto_erro.lower()
+                if "bloquead" in texto_erro_lower or "suspens" in texto_erro_lower:
+                    raise BlockedUserError(f"Usuário Bloqueado: {texto_erro}")
+                elif any(kw in texto_erro_lower for kw in ["senha", "inválid", "incorret"]):
+                    raise LoginError(f"Erro no login: {texto_erro}")
+                else:
+                    raise PageDataError(f"Erro na página gov: {texto_erro}")
         except TimeoutError:
             pass
 

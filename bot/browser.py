@@ -22,6 +22,9 @@ class BlockedUserError(Exception):
 class PageDataError(Exception):
     pass
 
+class TwoFactorAuthError(Exception):
+    pass
+
 def obter_caminho_chrome_local():
     """
     Busca o executável do Google Chrome na máquina do cliente, 
@@ -259,6 +262,16 @@ def login_e_extrair_tokens(cpf: str, senha: str, headless: bool = False):
 
         page.click('button#submit-button')
 
+        sleep(1)
+
+        # Avaliação rápida para 2FA
+        try:
+            if page.locator('#twoFactorForm').is_visible(timeout=3000):
+                # A tela de 2 fatores apareceu, o bot não tem como seguir.
+                raise TwoFactorAuthError("Autenticação de Dois Fatores exigida.")
+        except TimeoutError:
+            pass
+        
         try:
             page.wait_for_selector('.br-message.warning', timeout=5000)
             error_text = page.locator('.br-message.warning').inner_text()
@@ -329,7 +342,7 @@ def login_e_extrair_tokens(cpf: str, senha: str, headless: bool = False):
         logger.warning(f"[{cpf_str}] Demora excessiva (Timeout) de rede ou do Gov.br: {te}")
         raise PageDataError("Falha de conexão / Timeout")
 
-    except Exception as e:
-        logger.info(f"[{cpf_str}] Falha durante o processo: {e}")
-        return False
+    # except Exception as e:
+    #     logger.info(f"[{cpf_str}] Falha durante o processo: {e}")
+    #     return False
         

@@ -7,7 +7,7 @@ from dateutil.relativedelta import relativedelta
 import shutil
 
 from input_reader import read_input_data
-from bot.browser import login_e_extrair_tokens, fechar_browser, LoginError, PageDataError, BlockedUserError
+from bot.browser import login_e_extrair_tokens, fechar_browser, LoginError, PageDataError, BlockedUserError, TwoFactorAuthError
 from bot.api_client import APIClient, APIError
 from bot.parser import analisar_historico_creditos
 from bot.report_generator import gerar_relatorio_final
@@ -57,7 +57,9 @@ def main():
         "falha_extracao": 0,
         "senha_errada": 0,
         "usuario_bloqueado": 0,
-        "sem_senha": 0
+        "sem_senha": 0,
+        "exige_2fa": 0,
+        "nao_implantado": 0
     }
 
     # Configurar Banco de Dados
@@ -118,13 +120,15 @@ def main():
         for status, count in cursor.fetchall():
             if status == "Sucesso":
                 estatisticas["sucesso"] = count
-            elif status == "Senha Não Confere":
+            elif status == "Exige 2 Fatores (Ação: Verificar ativação com o cliente)":
+                estatisticas["exige_2fa"] = count
+            elif status == "Senha Não Confere (Ação: Revisar credencial com cliente)":
                 estatisticas["senha_errada"] = count
-            elif status == "Usuário Bloqueado":
+            elif status == "Usuário Bloqueado (Ação: Regularizar conta no Gov.br)":
                 estatisticas["usuario_bloqueado"] = count
-            elif status == "Senha Não Fornecida":
+            elif status == "Senha Não Fornecida (Ação: Solicitar ao cliente)":
                 estatisticas["sem_senha"] = count
-            elif status == "Falha na extração" or "Sessão" in status or "Acesso Negado" in status or "Indisponibilidade" in status:
+            elif "Falha na extração" in status:
                 estatisticas["falha_extracao"] += count
                 
         # Atualiza a contagem dos PABs ou Implantações que foram sucesso
@@ -132,6 +136,8 @@ def main():
         for imp, pab in cursor.fetchall():
             if imp == "ALERTA DE IMPLANTAÇÃO" or pab == "ALERTA DE PAB":
                 estatisticas["implantacao_ou_pab"] += 1
+            if imp == "Não Implantado":
+                estatisticas["nao_implantado"] += 1
                 
     logger.info(f"Total de registros: {total_clientes} | Restantes na fila: {max(0, total_clientes - qtd_processados)}")
 
@@ -179,13 +185,17 @@ def main():
             # Aqui pode lançar `LoginError` ou retornar os tokens
             auth_dados = login_e_extrair_tokens(cpf, senha, headless=False) # Usando HEADLESS False pra rodar visível!
             
-            if not auth_dados:
-                logger.warning("  -> Falha genérica na navegação ou queda de conexão.")
-                dado_saida["CONSULTA"] = "Falha na extração"
-                estatisticas["falha_extracao"] += 1
-                dados_finais.append(dado_saida)
-                continue
+            # if not auth_dados:
+            #     logger.warning("  -> Falha genérica na navegação ou queda de conexão.")
+            #     dado_saida["CONSULTA"] = "Falha na extração"
+            #     estatisticas["falha_extracao"] += 1
+            #     dados_finais.append(dado_saida)
+            #     continue
             
+            # Deu tudo certo!
+            dado_saida["CONSULTA"] = "Sucesso"
+            estatisticas["sucesso"] += 1
+
             # API Client
             logger.info("  -> Conectando nas APIs do portal Meu INSS...")
             api = APIClient()
@@ -209,9 +219,6 @@ def main():
 
             # SÓ BAIXA O PDF SE DEU CERTO A CONSULTA! (Como definido Sucesso)
             
-            # Deu tudo certo!
-            dado_saida["CONSULTA"] = "Sucesso"
-            estatisticas["sucesso"] += 1
 
             if resultado_regra["IMPLANTAÇÃO"] == "ALERTA DE IMPLANTAÇÃO" or resultado_regra["PAB"] == "ALERTA DE PAB":
                 logger.info("  -> Efetuando o download do PDF de Extrato...")
@@ -230,43 +237,45 @@ def main():
             logger.info("  -> Extração do cliente finalizada com SUCESSO.")
 
 
+        except TwoFactorAuthError as tfa:
+            logger.warning(f"[CPF: {cpf}] CLASSIFICACAO=Bloqueio Login | MENSAGEM={tfa}")
+            dado_saida["CONSULTA"] = "Exige 2 Fatores (Ação: Verificar ativação com o cliente)"
+            estatisticas["exige_2fa"] += 1
+        
         except PageDataError as pe:
-            logger.error(f"  -> Erro na página (Dados cadastrais incompletos): {pe}")
-            dado_saida["CONSULTA"] = "Falha na extração"
+            logger.error(f"[CPF: {cpf}] CLASSIFICACAO=Falha Extração | MENSAGEM={pe}")
+            dado_saida["CONSULTA"] = "Falha na extração (Ação: Analisar possível erro cadastral)"
             estatisticas["falha_extracao"] += 1
 
         except LoginError as le:
-            logger.error(f"  -> Erro de Login (Senha não confere): {le}")
-            dado_saida["CONSULTA"] = "Senha Não Confere"
+            logger.error(f"[CPF: {cpf}] CLASSIFICACAO=Senha Não Confere | MENSAGEM={le}")
+            dado_saida["CONSULTA"] = "Senha Não Confere (Ação: Revisar credencial com cliente)"
             estatisticas["senha_errada"] += 1
 
         except BlockedUserError as be:
-            logger.error(f"  -> Erro de Login (Usuário Bloqueado/Suspenso): {be}")
-            dado_saida["CONSULTA"] = "Usuário Bloqueado"
+            logger.error(f"[CPF: {cpf}] CLASSIFICACAO=Usuário Bloqueado/Suspenso | MENSAGEM={be}")
+            dado_saida["CONSULTA"] = "Usuário Bloqueado (Ação: Regularizar conta no Gov.br)"
             estatisticas["usuario_bloqueado"] += 1
 
         except APIError as api_err:
-            logger.error(f"  -> Erro nas chamadas de API do site (Status {api_err.status_code}): {api_err.args[0]}")
-            if api_err.status_code == 401:
-                dado_saida["CONSULTA"] = "Sessão expirou - 401 ou Não autorizado"
-            elif api_err.status_code == 403:
-                dado_saida["CONSULTA"] = "Acesso Negado (Gov.br/INSS)"
-            elif api_err.status_code and api_err.status_code >= 500:
-                dado_saida["CONSULTA"] = ("Indisponibilidade " + str(api_err.status_code))
-            else:
-                dado_saida["CONSULTA"] = "Falha na extração"
-            estatisticas["falha_extracao"] += 1
+            logger.error(f"[CPF: {cpf}] CLASSIFICACAO=Erro de API | CODIGO={api_err.status_code} | MENSAGEM={api_err.args[0]}")
+            # dado_saida["CONSULTA"] = "Sucesso"
+            # dado_saida["IMPLANTAÇÃO"] = "Não Implantado"
+            # estatisticas["sucesso"] += 1
+            estatisticas["nao_implantado"] += 1
 
         except ValueError:
-            logger.warning(f"  -> Senha não fornecida para {nome_cliente}")
-            dado_saida["CONSULTA"] = "Senha Não Fornecida"
+            logger.warning(f"[CPF: {cpf}] CLASSIFICACAO=Senha Ausente | MENSAGEM=Não preenchida")
+            dado_saida["CONSULTA"] = "Senha Não Fornecida (Ação: Solicitar ao cliente)"
             estatisticas["sem_senha"] += 1
             dados_finais.append(dado_saida)
 
         except Exception as ex:
-            logger.warning(f"  -> Detalhes de API/Hiscre não encontrados ou falhos para {cpf}: {ex}")
-            dado_saida["CONSULTA"] = "Falha na extração"
+            logger.warning(f"[CPF: {cpf}] CLASSIFICACAO=Falha Genérica API/Parser | MENSAGEM={ex}")
+            dado_saida["CONSULTA"] = "Falha na extração (Ação: Analisar possível erro cadastral)"
+            dado_saida["IMPLANTAÇÃO"] = "Não Implantado"
             estatisticas["falha_extracao"] += 1
+            # estatisticas["nao_implantado"] += 1
             valor_numerico = 0.0
 
         finally:
@@ -352,7 +361,10 @@ def main():
     logger.info("Resumo da Operação:")
     logger.info(f"Sucesso: {estatisticas['sucesso']}")
     logger.info(f"Implantação ou PAB: {estatisticas['implantacao_ou_pab']}")
+    logger.info(f"Não Implantado: {estatisticas['nao_implantado']}")
     logger.info(f"Falhas por Senha/Login: {estatisticas['senha_errada']}")
+    logger.info(f"Usuário Bloqueado: {estatisticas['usuario_bloqueado']}")
+    logger.info(f"2FA: {estatisticas['exige_2fa']}")
     logger.info(f"Falha de Extração Técnica: {estatisticas['falha_extracao']}")
     logger.info(f"Faltaram Senhas: {estatisticas['sem_senha']}")
 
@@ -361,10 +373,14 @@ def main():
         f"🖥️ <b>Cliente/PC:</b> <i>{usuario_pc}</i>\n"
         f"⏱️ <b>Início:</b> {estatisticas['start_time']} | <b>Fim:</b> {estatisticas['end_time']}\n"
         f"📊 <b>Resumo da Operação:</b>\n"
-        f"🟢 Sucessos: {estatisticas['sucesso']}\n"
-        f"🟢 Implantação/PAB: {estatisticas['implantacao_ou_pab']}\n"
+        f"🟢 Sucessos Globais: {estatisticas['sucesso']}\n"
+        f"   ┣ Implantação/PAB: {estatisticas['implantacao_ou_pab']}\n"
+        f"   ┗ Não Implantados: {estatisticas['nao_implantado']}\n"
         f"🟡 Falhas Extração: {estatisticas['falha_extracao']}\n"
-        f"⚪ Faltaram Senhas: {estatisticas['sem_senha']}"
+        f"⚪ Faltaram Senhas: {estatisticas['sem_senha']}\n"
+        f"🔴 Senha/Login Incorreto: {estatisticas['senha_errada']}\n"
+        f"🔴 Usuário Bloqueado: {estatisticas['usuario_bloqueado']}\n"
+        f"🔴 Exige 2FA: {estatisticas['exige_2fa']}\n"
     )
     
     # Envia o arquivo físico de log pro desenvolvedor monitorar!!

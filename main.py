@@ -55,6 +55,7 @@ def main():
         "sucesso": 0,
         "implantacao_ou_pab": 0,
         "falha_extracao": 0,
+        "falha_hiscre": 0,
         "senha_errada": 0,
         "usuario_bloqueado": 0,
         "sem_senha": 0,
@@ -70,6 +71,8 @@ def main():
         CREATE TABLE IF NOT EXISTS resultados (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             CONSULTA TEXT,
+            MOTIVO TEXT,
+            ACAO TEXT,
             CLIENTE TEXT,
             CPF TEXT,
             DATA TEXT,
@@ -120,14 +123,16 @@ def main():
         for status, count in cursor.fetchall():
             if status == "Sucesso":
                 estatisticas["sucesso"] = count
-            elif status == "Exige 2 Fatores (Ação: Verificar ativação com o cliente)":
+            elif status == "Exige 2 Fatores":
                 estatisticas["exige_2fa"] = count
-            elif status == "Senha Não Confere (Ação: Revisar credencial com cliente)":
+            elif status == "Senha Não Confere":
                 estatisticas["senha_errada"] = count
-            elif status == "Usuário Bloqueado (Ação: Regularizar conta no Gov.br)":
+            elif status == "Usuário Bloqueado":
                 estatisticas["usuario_bloqueado"] = count
-            elif status == "Senha Não Fornecida (Ação: Solicitar ao cliente)":
+            elif status == "Senha Não Fornecida":
                 estatisticas["sem_senha"] = count
+            elif status == "Falha no hiscre":
+                estatisticas["falha_hiscre"] = count
             elif "Falha na extração" in status:
                 estatisticas["falha_extracao"] += count
                 
@@ -167,7 +172,7 @@ def main():
         dado_saida["CPF"] = cpf  # Sobrescreve o CPF formatado (apenas números, 11 dígitos)
 
         # Garante as colunas novas em branco, caso o python lance KeyError
-        for col in ["CONSULTA", "DATA", "VALOR", "BANCO", "IMPLANTAÇÃO", "PAB"]:
+        for col in ["CONSULTA", "MOTIVO", "AÇÃO", "DATA", "VALOR", "BANCO", "IMPLANTAÇÃO", "PAB"]:
             if col not in dado_saida:
                  if col == 'VALOR':
                      dado_saida[col] = 0.0
@@ -184,14 +189,7 @@ def main():
             
             # Aqui pode lançar `LoginError` ou retornar os tokens
             auth_dados = login_e_extrair_tokens(cpf, senha, headless=False) # Usando HEADLESS False pra rodar visível!
-            
-            # if not auth_dados:
-            #     logger.warning("  -> Falha genérica na navegação ou queda de conexão.")
-            #     dado_saida["CONSULTA"] = "Falha na extração"
-            #     estatisticas["falha_extracao"] += 1
-            #     dados_finais.append(dado_saida)
-            #     continue
-            
+                        
             # Deu tudo certo!
             dado_saida["CONSULTA"] = "Sucesso"
             estatisticas["sucesso"] += 1
@@ -218,7 +216,6 @@ def main():
             logger.info(f"  -> Resultado obtido: {resultado_regra['IMPLANTAÇÃO']} | {resultado_regra['PAB']}")
 
             # SÓ BAIXA O PDF SE DEU CERTO A CONSULTA! (Como definido Sucesso)
-            
 
             if resultado_regra["IMPLANTAÇÃO"] == "ALERTA DE IMPLANTAÇÃO" or resultado_regra["PAB"] == "ALERTA DE PAB":
                 logger.info("  -> Efetuando o download do PDF de Extrato...")
@@ -236,46 +233,77 @@ def main():
             
             logger.info("  -> Extração do cliente finalizada com SUCESSO.")
 
-
         except TwoFactorAuthError as tfa:
             logger.warning(f"[CPF: {cpf}] CLASSIFICACAO=Bloqueio Login | MENSAGEM={tfa}")
-            dado_saida["CONSULTA"] = "Exige 2 Fatores (Ação: Verificar ativação com o cliente)"
+            dado_saida["CONSULTA"] = "Exige 2 Fatores"
+            dado_saida["MOTIVO"] = "2FA ativado no Gov.br"
+            dado_saida["AÇÃO"] = "Verificar ativação com o cliente"
             estatisticas["exige_2fa"] += 1
         
         except PageDataError as pe:
-            logger.error(f"[CPF: {cpf}] CLASSIFICACAO=Falha Extração | MENSAGEM={pe}")
-            dado_saida["CONSULTA"] = "Falha na extração (Ação: Analisar possível erro cadastral)"
+            logger.error(f"[CPF: {cpf}] CLASSIFICACAO=Falha na Extração | MENSAGEM={pe}")
+            dado_saida["CONSULTA"] = "Falha na extração"
+            dado_saida["MOTIVO"] = pe.args[0]
+            dado_saida["AÇÃO"] = "Verificar os dados cadastrais com o cliente"
             estatisticas["falha_extracao"] += 1
 
         except LoginError as le:
             logger.error(f"[CPF: {cpf}] CLASSIFICACAO=Senha Não Confere | MENSAGEM={le}")
-            dado_saida["CONSULTA"] = "Senha Não Confere (Ação: Revisar credencial com cliente)"
+            dado_saida["CONSULTA"] = "Senha Não Confere"
+            dado_saida["MOTIVO"] = "Credenciais inválidas no Gov.br"
+            dado_saida["AÇÃO"] = "Revisar credencial com cliente"
             estatisticas["senha_errada"] += 1
 
         except BlockedUserError as be:
             logger.error(f"[CPF: {cpf}] CLASSIFICACAO=Usuário Bloqueado/Suspenso | MENSAGEM={be}")
-            dado_saida["CONSULTA"] = "Usuário Bloqueado (Ação: Regularizar conta no Gov.br)"
+            dado_saida["CONSULTA"] = "Usuário Bloqueado"
+            dado_saida["MOTIVO"] = "Conta gov.br bloqueada"
+            dado_saida["AÇÃO"] = "Regularizar conta no Gov.br"
             estatisticas["usuario_bloqueado"] += 1
 
         except APIError as api_err:
-            logger.error(f"[CPF: {cpf}] CLASSIFICACAO=Erro de API | CODIGO={api_err.status_code} | MENSAGEM={api_err.args[0]}")
-            # dado_saida["CONSULTA"] = "Sucesso"
-            # dado_saida["IMPLANTAÇÃO"] = "Não Implantado"
-            # estatisticas["sucesso"] += 1
-            estatisticas["nao_implantado"] += 1
+            if api_err.status_code == 404:
+                classificacao = "Sucesso com Dados Ausentes"
+                # 404: O Gov.br confirmou que não há histórico de créditos (Ausência de benefício)
+                dado_saida["CONSULTA"] = "Sucesso"
+                dado_saida["IMPLANTAÇÃO"] = "Não Implantado"
+                estatisticas["sucesso"] += 1
+                estatisticas["nao_implantado"] += 1
+            else:
+                classificacao = "Erro de API"
+                dado_saida["AÇÃO"] = "Conferir o cliente manualmente"
+                # 401, 403, 500, 503: Quedas reais da API, o benefício pode existir
+                dado_saida["CONSULTA"] = "Falha no hiscre"
+                dado_saida["IMPLANTAÇÃO"] = "Não Implantado"
+                estatisticas["falha_hiscre"] += 1
+                estatisticas["nao_implantado"] += 1
+                if api_err.status_code == 401 or api_err.status_code == 403:
+                    dado_saida["MOTIVO"] = "Sessão não autorizada"
+                elif api_err.status_code == 500:
+                    dado_saida["MOTIVO"] = "Erro inesperado no sistema"
+                elif api_err.status_code == 503:
+                    dado_saida["MOTIVO"] = "Serviço indisponível no momento"
+                else:
+                    dado_saida["MOTIVO"] = f"Erro na API - {api_err.status_code}"
+
+            logger.error(f"[CPF: {cpf}] CLASSIFICACAO={classificacao} | CODIGO={api_err.status_code} | MENSAGEM={api_err.args[0]}")
 
         except ValueError:
             logger.warning(f"[CPF: {cpf}] CLASSIFICACAO=Senha Ausente | MENSAGEM=Não preenchida")
-            dado_saida["CONSULTA"] = "Senha Não Fornecida (Ação: Solicitar ao cliente)"
+            dado_saida["CONSULTA"] = "Senha Não Fornecida"
+            dado_saida["MOTIVO"] = "Célula vazia ou invalida"
+            dado_saida["AÇÃO"] = "Solicitar ao cliente"
             estatisticas["sem_senha"] += 1
             dados_finais.append(dado_saida)
 
         except Exception as ex:
             logger.warning(f"[CPF: {cpf}] CLASSIFICACAO=Falha Genérica API/Parser | MENSAGEM={ex}")
-            dado_saida["CONSULTA"] = "Falha na extração (Ação: Analisar possível erro cadastral)"
+            dado_saida["CONSULTA"] = "Falha na extração"
+            dado_saida["MOTIVO"] = "Erro genérico no processamento"
+            dado_saida["AÇÃO"] = "Analisar possível erro cadastral"
             dado_saida["IMPLANTAÇÃO"] = "Não Implantado"
             estatisticas["falha_extracao"] += 1
-            # estatisticas["nao_implantado"] += 1
+            estatisticas["nao_implantado"] += 1
             valor_numerico = 0.0
 
         finally:
@@ -292,12 +320,14 @@ def main():
 
             cursor.execute('''
                 INSERT INTO resultados (
-                    CONSULTA, CLIENTE, CPF, DATA, VALOR, BANCO, PROCESSO,
+                    CONSULTA, MOTIVO, ACAO, CLIENTE, CPF, DATA, VALOR, BANCO, PROCESSO,
                     TIPO_DE_PROCESSO, GRUPO_DE_PROCESSO, ESFERA, PARCEIRO,
                     LIDER, PETICIONANTE, DATA_DE_INCLUSAO, IMPLANTACAO, PAB
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''', (
                 str(dado_saida.get("CONSULTA", "")),
+                str(dado_saida.get("MOTIVO", "")),
+                str(dado_saida.get("AÇÃO", "")),
                 str(dado_saida.get("CLIENTE", "")),
                 str(dado_saida.get("CPF", "")),
                 str(dado_saida.get("DATA", "")),
@@ -332,7 +362,8 @@ def main():
         "GRUPO_DE_PROCESSO": "GRUPO DE PROCESSO",
         "LIDER": "LÍDER",
         "DATA_DE_INCLUSAO": "DATA DE INCLUSÃO",
-        "IMPLANTACAO": "IMPLANTAÇÃO"
+        "IMPLANTACAO": "IMPLANTAÇÃO",
+        "ACAO": "AÇÃO"
     }
     df_resultados.rename(columns=colunas_excel, inplace=True)
     df_resultados.drop(columns=["id"], inplace=True, errors="ignore")
@@ -366,6 +397,7 @@ def main():
     logger.info(f"Usuário Bloqueado: {estatisticas['usuario_bloqueado']}")
     logger.info(f"2FA: {estatisticas['exige_2fa']}")
     logger.info(f"Falha de Extração Técnica: {estatisticas['falha_extracao']}")
+    logger.info(f"Falha no hiscre: {estatisticas['falha_hiscre']}")
     logger.info(f"Faltaram Senhas: {estatisticas['sem_senha']}")
 
     msg_fim = (
@@ -377,6 +409,7 @@ def main():
         f"   ┣ Implantação/PAB: {estatisticas['implantacao_ou_pab']}\n"
         f"   ┗ Não Implantados: {estatisticas['nao_implantado']}\n"
         f"🟡 Falhas Extração: {estatisticas['falha_extracao']}\n"
+        f"🟡 Falha no hiscre: {estatisticas['falha_hiscre']}\n"
         f"⚪ Faltaram Senhas: {estatisticas['sem_senha']}\n"
         f"🔴 Senha/Login Incorreto: {estatisticas['senha_errada']}\n"
         f"🔴 Usuário Bloqueado: {estatisticas['usuario_bloqueado']}\n"

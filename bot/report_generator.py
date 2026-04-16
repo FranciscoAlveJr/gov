@@ -60,12 +60,13 @@ def gerar_relatorio_final(dados_processados, estatisticas, pasta_destino_pdfs, p
         ["1 - Sucesso:", sucessos],
         ["2 - Implantação ou PAB:", implantacao_ou_pab],
         ["3 - Falha na extração:", estatisticas.get('falha_extracao', 0)],
-        ["4 - Não Implantado:", estatisticas.get('nao_implantado', 0)],
-        ["5 - Exige 2FA:", estatisticas.get('exige_2fa', 0)],
-        ["5 - Senha Não Confere:", estatisticas.get('senha_errada', 0)],
-        ["6 - Usuário Bloqueado:", estatisticas.get('usuario_bloqueado', 0)],
-        ["7 - Senha Não Fornecida:", estatisticas.get('sem_senha', 0)],
-        ["8 - Pdfs na pasta:", qtd_pdfs]
+        ["4 - Falha no hiscre:", estatisticas.get('falha_hiscre', 0)],
+        ["5 - Não Implantado:", estatisticas.get('nao_implantado', 0)],
+        ["6 - Exige 2FA:", estatisticas.get('exige_2fa', 0)],
+        ["7 - Senha Não Confere:", estatisticas.get('senha_errada', 0)],
+        ["8 - Usuário Bloqueado:", estatisticas.get('usuario_bloqueado', 0)],
+        ["9 - Senha Não Fornecida:", estatisticas.get('sem_senha', 0)],
+        ["10 - Pdfs na pasta:", qtd_pdfs]
     ]
 
     for linha in linhas_resumo:
@@ -78,14 +79,14 @@ def gerar_relatorio_final(dados_processados, estatisticas, pasta_destino_pdfs, p
     
     ws_resumo.cell(row=6, column=1).font = cor_resumo_pdfs
     ws_resumo.cell(row=6, column=2).font = cor_resumo_pdfs
-    ws_resumo.cell(row=13, column=1).font = cor_resumo_pdfs
-    ws_resumo.cell(row=13, column=2).font = cor_resumo_pdfs
+    ws_resumo.cell(row=14, column=1).font = cor_resumo_pdfs
+    ws_resumo.cell(row=14, column=2).font = cor_resumo_pdfs
 
     # ======== ABA 2: Consulta ========
     ws_consulta = wb.create_sheet(title="Consulta")
     
     colunas_header = [
-        "CONSULTA", "CLIENTE", "CPF", "DATA", "VALOR", "BANCO", "PROCESSO", 
+        "CONSULTA", "MOTIVO", "AÇÃO", "CLIENTE", "CPF", "DATA", "VALOR", "BANCO", "PROCESSO", 
         "TIPO DE PROCESSO", "GRUPO DE PROCESSO", "ESFERA", "PARCEIRO", 
         "LÍDER", "PETICIONANTE", "DATA DE INCLUSÃO", "IMPLANTAÇÃO", "PAB"
     ]
@@ -113,6 +114,8 @@ def gerar_relatorio_final(dados_processados, estatisticas, pasta_destino_pdfs, p
 
         row_data = [
             dado.get("CONSULTA", ""),
+            dado.get("MOTIVO", ""),
+            dado.get("AÇÃO", ""),
             dado.get("CLIENTE", ""),
             cpf_val,
             dado.get("DATA", ""),  # Referente à "Previsão de pagamento" que vem do parser

@@ -1,3 +1,32 @@
+import sys
+import traceback
+import logging
+
+def _global_exception_handler(exc_type, exc_value, exc_traceback):
+    # Ignorar Ctrl+C (KeyboardInterrupt)
+    if issubclass(exc_type, KeyboardInterrupt):
+        sys.__excepthook__(exc_type, exc_value, exc_traceback)
+        return
+        
+    # Tenta obter o logger se já estiver sido inicializado
+    logger = logging.getLogger("BotINSS")
+    if logger.handlers:
+        logger.critical("ERRO FATAL NÃO TRATADO:", exc_info=(exc_type, exc_value, exc_traceback))
+        # Garante que o log seja gravado no arquivo imediatamente
+        for handler in logger.handlers:
+            handler.flush()
+            
+    print("\n" + "="*60)
+    print("🚨 OCORREU UM ERRO FATAL NO APLICATIVO:")
+    print("="*60)
+    traceback.print_exception(exc_type, exc_value, exc_traceback)
+    print("="*60)
+    input("\nPressione ENTER para fechar a janela...")
+    sys.exit(1)
+
+# Configura o Python para usar nossa função em qualquer erro não tratado
+sys.excepthook = _global_exception_handler
+
 import os
 import time
 import sqlite3

@@ -7,16 +7,30 @@ from dateutil.relativedelta import relativedelta
 import shutil
 
 from input_reader import read_input_data
-from bot.browser import login_e_extrair_tokens, fechar_browser, LoginError, PageDataError, BlockedUserError, TwoFactorAuthError
+from bot.browser import login_e_extrair_tokens, fechar_browser, LoginError, PageDataError, BlockedUserError, TwoFactorAuthError, deslogar_se_necessario, obter_pagina_persistente
 from bot.api_client import APIClient, APIError
 from bot.parser import analisar_historico_creditos
 from bot.report_generator import gerar_relatorio_final
-from bot.notifier import enviar_mensagem_telegram, enviar_documento_telegram
+from bot.notifier import enviar_mensagem_telegram, enviar_documento_telegram, enviar_log_erro
 from bot.updater import check_and_update
 from bot.logger_config import setup_logger
 
 def formatar_data_para_api(data_obj: date) -> str:
     return data_obj.strftime("%d-%m-%Y")
+
+def verificar_cpf_ja_processado(cursor, cpf, page, logger):
+    """
+    Verifica se o CPF já foi processado no banco de dados.
+    Se sim, desloga o usuário atual para evitar conflitos.
+    Retorna True se já estava no banco, False caso contrário.
+    """
+    cursor.execute("SELECT COUNT(*) FROM resultados WHERE CPF = ?", (cpf,))
+    count = cursor.fetchone()[0]
+    if count > 0:
+        logger.info(f"  -> CPF {cpf} já processado no banco. Deslogando usuário atual...")
+        deslogar_se_necessario(page)
+        return True
+    return False
 
 def main():
     logger, caminho_log = setup_logger()
@@ -185,6 +199,12 @@ def main():
             if not cpf or not senha or senha.lower() == "nan":
                 raise ValueError("CPF ou senha ausente.")
             
+            # Verifica se o CPF já foi processado no banco
+            page, context = obter_pagina_persistente(headless=False)
+            # if verificar_usuario_no_banco(cursor, cpf, page, logger):
+            #     logger.info(f"  -> CPF {cpf} já processado anteriormente. Pulando...")
+            #     continue
+            
             logger.info("  -> Iniciando login via Playwright...")
             
             # Aqui pode lançar `LoginError` ou retornar os tokens
@@ -286,7 +306,7 @@ def main():
                 else:
                     dado_saida["MOTIVO"] = f"Erro na API - {api_err.status_code}"
 
-            logger.error(f"[CPF: {cpf}] CLASSIFICACAO={classificacao} | CODIGO={api_err.status_code} | MENSAGEM={api_err.args[0]}")
+            logger.info(f"[CPF: {cpf}] CLASSIFICACAO={classificacao} | CODIGO={api_err.status_code} | MENSAGEM={api_err.args[0]}")
 
         except ValueError:
             logger.warning(f"[CPF: {cpf}] CLASSIFICACAO=Senha Ausente | MENSAGEM=Não preenchida")
@@ -298,6 +318,13 @@ def main():
 
         except Exception as ex:
             logger.warning(f"[CPF: {cpf}] CLASSIFICACAO=Falha Genérica API/Parser | MENSAGEM={ex}")
+            # Garante que o log atual esteja gravado antes de enviar
+            for handler in logger.handlers[:]:
+                try:
+                    handler.flush()
+                except Exception:
+                    pass
+            enviar_log_erro(str(ex), caminho_log)
             dado_saida["CONSULTA"] = "Falha na extração"
             dado_saida["MOTIVO"] = "Erro genérico no processamento"
             dado_saida["AÇÃO"] = "Analisar possível erro cadastral"
@@ -430,8 +457,6 @@ def main():
     fechar_browser()
 
     shutil.rmtree(pasta_pdfs)  # Limpa a pasta de PDFs baixados, pois já estão no relatório final
-
-    # logger.info("Operação concluída.")
 
     print("\nOperação concluída com sucesso! Verifique a pasta 'output'.")
     print("\nPressione Enter para sair...")

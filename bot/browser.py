@@ -165,11 +165,127 @@ def deslogar_se_necessario(page: Page):
     except Exception:
         logger.debug(f"Processo de verificação de logout concluído (Nenhum usuário estava logado)")
 
+def _coletar_tokens_da_pagina(page: Page, context, cpf_str: str) -> dict:
+    """
+    Coleta os tokens de autenticação (bearer + miToken) a partir das requests
+    já realizadas pela página, além dos cookies e user-agent.
+    """
+    bearer_token = None
+    token = None
+
+    for request in page.requests():
+        if request.method == "OPTIONS":
+            continue
+        if "usuarioservices/info" in request.url:
+            try:
+                req_headers = request.headers
+                if "authorization" in req_headers:
+                    bearer_token = req_headers["authorization"].replace("Bearer ", "").strip()
+                elif "Authorization" in req_headers:
+                    bearer_token = req_headers["Authorization"].replace("Bearer ", "").strip()
+                if request.response() and request.response().ok:
+                    data = request.response().json()
+                    token = data.get("miToken", "")
+            except Exception as err:
+                logger.debug(f"Erro ao ler JSON da API durante coleta de tokens: {err}")
+
+    if not token:
+        logger.info(f"[{cpf_str}] ATENÇÃO: Token não encontrado na intercepção.")
+
+    cookies = context.cookies()
+    auth_dict = {
+        "cookies": cookies,
+        "mitoken": token,
+        "bearer": bearer_token,
+        "user_agent": page.evaluate("navigator.userAgent")
+    }
+    return auth_dict
+
+
+def _verificar_erros_pos_login(page: Page, cpf_str: str):
+    """
+    Verifica erros comuns após o envio das credenciais.
+    Lança as exceções apropriadas se detectar bloqueio, senha errada, 2FA ou erro de página.
+    """
+    # Erro 502 / Servidor indisponível
+    try:
+        if (
+            page.locator('text="502 Bad Gateway"').is_visible(timeout=2000)
+            or page.locator('text="Bad Gateway"').is_visible(timeout=1000)
+            or page.locator('text="Internal Server Error"').is_visible(timeout=1000)
+            or page.locator('text="Erro interno"').is_visible(timeout=1000)
+            or page.locator('text="Servidor indisponível"').is_visible(timeout=1000)
+        ):
+            raise TimeoutError("Erro 502/Interno detectado. Será feita nova tentativa.")
+    except TimeoutError as te:
+        if "502" in str(te) or "Interno" in str(te):
+            raise
+
+    # Erro 403 / Acesso negado
+    try:
+        if (
+            page.locator('text="403 Forbidden"').is_visible(timeout=2000)
+            or page.locator('text="Access Denied"').is_visible(timeout=1000)
+            or page.locator('text="Acesso Negado"').is_visible(timeout=1000)
+        ):
+            raise TimeoutError("Erro 403/Acesso Negado detectado. Será feita nova tentativa.")
+    except TimeoutError as te:
+        if "403" in str(te) or "Acesso Negado" in str(te):
+            raise
+
+    # 2FA
+    try:
+        if page.locator('#twoFactorForm').is_visible(timeout=2000):
+            raise TwoFactorAuthError("Autenticação de Dois Fatores exigida.")
+    except TimeoutError:
+        pass
+
+    # Mensagem de aviso/erro no gov.br (.br-message.warning)
+    try:
+        page.wait_for_selector('.br-message.warning', timeout=3000)
+        error_text = page.locator('.br-message.warning').inner_text()
+        error_text_lower = error_text.lower()
+        if "bloquead" in error_text_lower or "suspens" in error_text_lower:
+            raise BlockedUserError(f"Usuário Bloqueado: {error_text}")
+        elif any(kw in error_text_lower for kw in ["senha", "inválid", "incorret"]):
+            raise LoginError(f"Erro no login: {error_text}")
+        else:
+            raise PageDataError(f"Erro na página gov: {error_text}")
+    except TimeoutError:
+        pass
+
+    # Mensagem de erro div.message.error (INSS)
+    try:
+        error_msg = page.wait_for_selector('div.message.error', timeout=3000)
+        if error_msg:
+            texto_erro = error_msg.inner_text()
+            texto_erro_lower = texto_erro.lower()
+            if "bloquead" in texto_erro_lower or "suspens" in texto_erro_lower:
+                raise BlockedUserError(f"Usuário Bloqueado: {texto_erro}")
+            elif any(kw in texto_erro_lower for kw in ["senha", "inválid", "incorret"]):
+                raise LoginError(f"Erro no login: {texto_erro}")
+            else:
+                raise PageDataError(f"Erro na página gov: {texto_erro}")
+    except TimeoutError:
+        pass
+
+
 def login_e_extrair_tokens(cpf: str, senha: str, headless: bool = False):
     """
-    Acessa o site do meu.inss.gov.br, realiza o login pelo gov.br usando CPF e senha,
-    e retorna informações de sessão.
-    Mantém a janela do navegador aberta com a mesma sessão entre execuções.
+    Acessa o site do meu.inss.gov.br e realiza o login pelo gov.br usando CPF e senha.
+    Trata três cenários distintos ao abrir o browser:
+
+      Cenário A – Browser já logado na página do cliente:
+        O avatar está visível assim que a página carrega. Coleta os tokens diretamente.
+
+      Cenário B – Página principal do INSS, sessão ativa no gov.br:
+        O botão 'Entrar com gov.br' está presente, mas ao clicar ele já redireciona
+        para a área do cliente sem pedir CPF/senha novamente.
+
+      Cenário C – Fluxo normal (sem sessão ativa):
+        Redireciona para sso.acesso.gov.br e exige CPF + senha.
+
+    Retorna um dicionário com cookies, mitoken, bearer e user_agent.
     """
     cpf_str = str(cpf).strip()
     senha_str = str(senha).strip()
@@ -180,175 +296,140 @@ def login_e_extrair_tokens(cpf: str, senha: str, headless: bool = False):
     while True:
         try:
             page, context = obter_pagina_persistente(headless=headless)
-            
-            # Desloga caso tenha sobrado login da iteração anterior
+
+            # Abre aba limpa para o novo ciclo sem fechar o navegador
+            page = preparar_aba_novo_login(context, page)
+
+            # Desloga de contas anteriores
             deslogar_se_necessario(page)
 
-            # Reabre aba limpa para o novo ciclo de captcha/login sem fechar o navegador
-            page = preparar_aba_novo_login(context, page)
-            
             tentativas_login = 0
             while True:
                 try:
                     logger.info(f"[{cpf_str}] Acessando portal Meu INSS...")
-                    page.goto("https://meu.inss.gov.br/#/login")
+                    page.goto("https://meu.inss.gov.br/#/login", wait_until="domcontentloaded")
 
-                    # Aguardar o botão de "Entrar com gov.br" e clicar
+                    # --- Cenário A: já logado (avatar visível antes mesmo de clicar) ---
+                    try:
+                        avatar_btn = page.locator('button#avatar-dropdown-trigger, button.btn-avatar').first
+                        avatar_btn.wait_for(state="visible", timeout=4000)
+                        logger.info(f"[{cpf_str}] CENÁRIO A: Browser já logado na página do cliente. Coletando tokens...")
+                        page.wait_for_load_state("networkidle", timeout=30000)
+                        auth_dict = _coletar_tokens_da_pagina(page, context, cpf_str)
+                        logger.info(f"[{cpf_str}] Login concluído (Cenário A). Token obtido: {'Sim' if auth_dict['mitoken'] else 'Não'}")
+                        return auth_dict
+                    except TimeoutError:
+                        pass  # Avatar não visível ainda, continua para o próximo cenário
+
+                    # --- Cenário B e C: há botão 'Entrar com gov.br' ---
                     btn_entrar = page.locator('button#main-content', has_text="Entrar com gov.br")
                     btn_entrar.wait_for(state="visible", timeout=10000)
                     btn_entrar.click()
+                    logger.info(f"[{cpf_str}] Botão 'Entrar com gov.br' clicado. Aguardando resposta do site...")
 
-                    # Aguardar redirecionamento para sso.acesso.gov.br
-                    logger.info(f"[{cpf_str}] Redirecionando para gov.br...")
-                    page.wait_for_selector('input#accountId')
+                    # Espera para saber qual caminho o site vai tomar
+                    # Pode ir para: (B) avatar do INSS  |  (C) campo CPF do gov.br
+                    try:
+                        page.wait_for_selector(
+                            'button#avatar-dropdown-trigger, button.btn-avatar, input#accountId',
+                            timeout=15000
+                        )
+                    except TimeoutError:
+                        logger.warning(f"[{cpf_str}] Timeout esperando redirecionamento após clicar em Entrar.")
+                        raise
 
-                    # Preencher CPF de forma mais lenta, aleatória e humana
-                    logger.info(f"[{cpf_str}] Preenchendo CPF...")
+                    # --- Cenário B: sessão gov.br ativa → avatar aparece sem pedir senha ---
+                    avatar_pos_click = page.locator('button#avatar-dropdown-trigger, button.btn-avatar').first
+                    if avatar_pos_click.is_visible(timeout=1000):
+                        logger.info(f"[{cpf_str}] CENÁRIO B: Sessão gov.br ativa. Redirecionado diretamente para a área do cliente.")
+                        page.wait_for_load_state("networkidle", timeout=30000)
+                        auth_dict = _coletar_tokens_da_pagina(page, context, cpf_str)
+                        logger.info(f"[{cpf_str}] Login concluído (Cenário B). Token obtido: {'Sim' if auth_dict['mitoken'] else 'Não'}")
+                        return auth_dict
+
+                    # --- Cenário C: fluxo normal, campo de CPF presente ---
+                    logger.info(f"[{cpf_str}] CENÁRIO C: Fluxo normal. Preenchendo CPF no gov.br...")
                     cpf_locator = page.locator('input#accountId')
+                    cpf_locator.wait_for(state="visible", timeout=5000)
                     cpf_locator.click()
                     sleep(random.uniform(0.3, 0.8))
                     for char in cpf_str:
                         cpf_locator.press_sequentially(char)
                         sleep(random.uniform(0.05, 0.25))
-                    
+
                     sleep(random.uniform(0.5, 1.5))
                     page.click('button#enter-account-id')
 
+                    _verificar_erros_pos_login(page, cpf_str)
+
                     # Aguardar campo de senha
-                    page.wait_for_selector('input#password', timeout=120000)
+                    logger.info(f"[{cpf_str}] Aguardando campo de senha...")
+                    page.wait_for_selector('input#password', timeout=60000)
                     sleep(random.uniform(1.5, 3.0))
 
-                    # Preencher Senha de forma mais lenta, aleatória e humana
-                    logger.info(f"[{cpf_str}] Preenchendo Senha...")
+                    logger.info(f"[{cpf_str}] Preenchendo senha...")
                     senha_locator = page.locator('input#password')
                     senha_locator.click()
                     sleep(random.uniform(0.3, 0.8))
                     for char in senha_str:
                         senha_locator.press_sequentially(char)
                         sleep(random.uniform(0.05, 0.25))
-                        
+
                     sleep(random.uniform(0.5, 1.5))
 
-                    break  # Sai do loop se chegou até aqui sem erros de timeout
+                    # Submete as credenciais
+                    page.click('button#submit-button')
+                    sleep(1)
+
+                    # Verifica erros comuns pós-envio (502, 2FA, senha errada, bloqueio)
+                    _verificar_erros_pos_login(page, cpf_str)
+
+                    # Aguarda redirecionamento para o INSS
+                    logger.info(f"[{cpf_str}] Aguardando autenticação e redirecionamento para o INSS...")
+                    page.wait_for_url("**/meu.inss.gov.br/**", timeout=30000)
+                    page.wait_for_load_state("networkidle", timeout=120000)
+
+                    # Verifica tela de erro de cadastro
+                    try:
+                        logger.info(f"[{cpf_str}] Verificando ausência de tela de erro de cadastro...")
+                        erro_cadastro = page.wait_for_selector(
+                            'text="Dados cadastrais diferentes ou incompletos"', timeout=5000
+                        )
+                        if erro_cadastro:
+                            logger.warning(f"[{cpf_str}] Tela de erro de Dados Cadastrais detectada.")
+                            page.wait_for_timeout(2000)
+                            raise PageDataError("Dados cadastrais diferentes ou incompletos.")
+                    except TimeoutError:
+                        pass  # Não apareceu, fluxo normal.
+
+                    break  # Sai do loop interno, login Cenário C concluído
+
                 except TimeoutError:
                     logger.warning(f"[{cpf_str}] Timeout durante o processo de login. Tentando novamente...")
                     tentativas_login += 1
                     if tentativas_login >= 3:
-                        raise TimeoutError("Múltiplas tentativas de login falharam por demorarem demais.")
-                    page.wait_for_timeout(2000)  # Espera um pouco antes de tentar novamente
+                        raise TimeoutError("Múltiplas tentativas de login falharam por timeout.")
+                    page.wait_for_timeout(2000)
                     continue
 
-            bearer_token = None
-            token = None
-            
-            def intercept_response(responses: list[Request]):
-                nonlocal bearer_token, token
-                for request in responses:
-                    if request.method == "OPTIONS":
-                        continue
+            # Coleta tokens após fluxo completo (Cenário C)
+            logger.info(f"[{cpf_str}] Coletando tokens após login completo (Cenário C)...")
+            auth_dict = _coletar_tokens_da_pagina(page, context, cpf_str)
+            logger.info(f"[{cpf_str}] Login concluído (Cenário C). Token obtido: {'Sim' if auth_dict['mitoken'] else 'Não'}")
 
-                    if "usuarioservices/info" in request.url:
-                        try:
-                            req_headers = request.headers
-                            if "authorization" in req_headers:
-                                bearer_token = req_headers["authorization"].replace("Bearer ", "").strip()
-                            elif "Authorization" in req_headers:
-                                bearer_token = req_headers["Authorization"].replace("Bearer ", "").strip()
-
-                            if request.response().ok:
-                                data = request.response().json()
-                                token = data.get("miToken", "")
-                        except Exception as err:
-                            logger.info(f"Erro ao ler JSON da API: {err}")
-
-            page.click('button#submit-button')
-
-            sleep(1)
-
-            # Avaliação rápida para 2FA
+            # 5. Faz o logoff do usuário
             try:
-                if page.locator('#twoFactorForm').is_visible(timeout=3000):
-                    # A tela de 2 fatores apareceu, o bot não tem como seguir.
-                    raise TwoFactorAuthError("Autenticação de Dois Fatores exigida.")
-            except TimeoutError:
-                pass
+                page.wait_for_timeout(2500)  # Aguarda um pouco a estabilização pós-login
+                deslogar_se_necessario(page)
+            except Exception as e:
+                logger.warning(f"Erro ao deslogar usuário: {e}")
             
-            # Avaliação rápida de erro de login
-            try:
-                page.wait_for_selector('.br-message.warning', timeout=5000)
-                error_text = page.locator('.br-message.warning').inner_text()
-                error_text_lower = error_text.lower()
-                if "bloquead" in error_text_lower or "suspens" in error_text_lower:
-                    raise BlockedUserError(f"Usuário Bloqueado: {error_text}")
-                elif any(kw in error_text_lower for kw in ["senha", "inválid", "incorret"]):
-                    raise LoginError(f"Erro no login: {error_text}")
-                else:
-                    raise PageDataError(f"Erro na página gov: {error_text}")
-            except TimeoutError:
-                pass
-
-            logger.info(f"[{cpf_str}] Aguardando autenticação e interceptando o tráfego do navegador...")
-            
-            # Espera até que a URL mude para o domínio do INSS, indicando que o login foi bem-sucedido e a sessão foi iniciada
-            try:
-                error_msg = page.wait_for_selector('div.message.error', timeout=5000)
-                if error_msg:
-                    texto_erro = error_msg.inner_text()
-                    texto_erro_lower = texto_erro.lower()
-                    if "bloquead" in texto_erro_lower or "suspens" in texto_erro_lower:
-                        raise BlockedUserError(f"Usuário Bloqueado: {texto_erro}")
-                    elif any(kw in texto_erro_lower for kw in ["senha", "inválid", "incorret"]):
-                        raise LoginError(f"Erro no login: {texto_erro}")
-                    else:
-                        raise PageDataError(f"Erro na página gov: {texto_erro}")
-            except TimeoutError:
-                pass
-
-            page.wait_for_url("**/meu.inss.gov.br/**", timeout=30000)
-            page.wait_for_load_state("networkidle", timeout=120000)
-
-            try:
-                logger.info(f"[{cpf_str}] Aguardando 5s para verificar ausência de tela de erro de cadastro...")
-                erro_cadastro = page.wait_for_selector('text="Dados cadastrais diferentes ou incompletos"', timeout=5000)
-                if erro_cadastro:
-                    logger.warning(f"[{cpf_str}] Foi detectada a tela de erro de Dados Cadastrais. Aguardando 2s para confirmação...")
-                    page.wait_for_timeout(2000)
-                    raise PageDataError("Dados cadastrais diferentes ou incompletos.")
-            except TimeoutError:
-                # Não apareceu a tela de erro dentro dos 5 segundos, fluxo segue normal.
-                pass
-
-            logger.info(f"[{cpf_str}] Coletando token e ID da sessão interceptando o tráfego do navegador...")
-
-            reqs = page.requests()
-
-            intercept_response(reqs)
-            
-            if not token:
-                logger.info(f"[{cpf_str}] ATENÇÃO: Token não encontrado na intercepção.")
-            
-            cookies = context.cookies()
-            auth_dict = {
-                "cookies": cookies,
-                "mitoken": token,
-                "bearer": bearer_token,
-                "user_agent": page.evaluate("navigator.userAgent")
-            }
-            
-            logger.info(f"[{cpf_str}] Login concluído, dados de sessão coletados. Token mitoken obtido: {'Sim' if token else 'Não'}")
             return auth_dict
 
-        # except PageDataError as pa:
-        #     raise PageDataError
-        
         except TimeoutError as te:
             logger.warning(f"[{cpf_str}] Demora excessiva (Timeout) de rede ou do Gov.br: {te}")
-            logger.warning(f"[{cpf_str}] Isso pode indicar que o site do Gov.br está lento ou enfrentando problemas, ou que o captcha está demorando muito para ser resolvido.")
-            logger.info("Esperando 5 minutos antes de tentar novamente...")
-            page.wait_for_timeout(300000)  # Espera 5 minutos (300.000 ms) antes de tentar novamente
-            continue  # Tenta novamente após a espera
+            logger.warning(f"[{cpf_str}] Isso pode indicar que o site está lento ou que o captcha demorou demais.")
+            logger.info("Esperando 1 minuto antes de tentar novamente...")
+            page.wait_for_timeout(60000)
+            continue
 
-    # except Exception as e:
-    #     logger.info(f"[{cpf_str}] Falha durante o processo: {e}")
-    #     return False
-        

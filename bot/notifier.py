@@ -77,6 +77,27 @@ def enviar_documento_telegram(caminho_arquivo, caption=""):
         logger.info(f"[Log] Erro ao enviar documento para o Telegram: {e}")
         return False
 
+
+def enviar_log_erro(texto_excecao, caminho_arquivo):
+    """
+    Envia o log de erro para o Telegram quando ocorre uma exceção genérica.
+    """
+    if TELEGRAM_BOT_TOKEN == "SEU_TOKEN_AQUI" or TELEGRAM_CHAT_ID == "SEU_CHAT_ID_AQUI":
+        logger.info("[Log] Telegram não configurado. Log de erro ignorado.")
+        return False
+
+    # Escapa caracteres que podem quebrar o parse_mode HTML
+    texto_seguro = (
+        str(texto_excecao)
+        .replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+    )
+
+    caption = f"⚠️ <b>Erro durante a execução</b>\n\n<pre>{texto_seguro}</pre>"
+    return enviar_documento_telegram(caminho_arquivo, caption=caption)
+
+
 def enviar_resumo_execucao(nome_cliente, estatisticas, arquivo_zip=None):
     """
     Formata as estatísticas em uma mensagem bonita e envia.

@@ -57,9 +57,9 @@ def check_and_update():
                     tamanho_baixado = 0
                     
                     if tamanho_total > 0:
-                        print(f"\nIniciando download da atualização ({tamanho_total / (1024 * 1024):.2f} MB)...")
+                        print(f"\nIniciando download da atualização ({tamanho_total / (1024 * 1024):.2f} MB)...", flush=True)
                     else:
-                        print("\nIniciando download da atualização...")
+                        print("\nIniciando download da atualização (Tamanho desconhecido)...", flush=True)
                         
                     with open(update_exe_path, "wb") as f:
                         for chunk in exe_req.iter_content(chunk_size=8192):
@@ -70,11 +70,11 @@ def check_and_update():
                                     percentual = (tamanho_baixado / tamanho_total) * 100
                                     blocos = int(50 * tamanho_baixado / tamanho_total)
                                     barra = "█" * blocos + "-" * (50 - blocos)
-                                    sys.stdout.write(f"\rProgresso: [{barra}] {percentual:.1f}%")
-                                    sys.stdout.flush()
+                                    print(f"\rProgresso: [{barra}] {percentual:.1f}%", end="", flush=True)
+                                else:
+                                    print(f"\rProgresso: Baixando... {tamanho_baixado / (1024 * 1024):.2f} MB", end="", flush=True)
                                     
-                    if tamanho_total > 0:
-                        sys.stdout.write("\n\n")
+                    print("\n")
                     
                     logger.info("Download concluído. Fechando para atualizar...")
                     enviar_mensagem_telegram("✅ Download finalizado. Reiniciando o bot com a nova versão.")

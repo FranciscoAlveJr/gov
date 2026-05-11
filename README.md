@@ -252,28 +252,6 @@ Em caso de exceção genérica, o arquivo de log é enviado automaticamente via 
 
 ---
 
-## 🧪 Testes
-
-Para executar a suite de testes com mocks (sem fazer chamadas reais à API):
-
-```bash
-python tests/main_test.py
-```
-
-Os testes simulam:
-- Login bem-sucedido
-- Resposta de API mockada
-- Geração de relatório
-- Sem aguardas de rede
-
----
-
-## 📄 Licença
-
-Este projeto é fornecido como ferramenta interna. Consulte o arquivo LICENSE para detalhes.
-
----
-
 ## 👥 Suporte e Contribuições
 
 Para relatar bugs ou solicitar funcionalidades, abra uma Issue. Para contribuir com código, envie um Pull Request.

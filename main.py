@@ -1,31 +1,6 @@
 import sys
 import traceback
-import logging
-
-def _global_exception_handler(exc_type, exc_value, exc_traceback):
-    # Ignorar Ctrl+C (KeyboardInterrupt)
-    if issubclass(exc_type, KeyboardInterrupt):
-        sys.__excepthook__(exc_type, exc_value, exc_traceback)
-        return
-        
-    # Tenta obter o logger se já estiver sido inicializado
-    logger = logging.getLogger("BotINSS")
-    if logger.handlers:
-        logger.critical("ERRO FATAL NÃO TRATADO:", exc_info=(exc_type, exc_value, exc_traceback))
-        # Garante que o log seja gravado no arquivo imediatamente
-        for handler in logger.handlers:
-            handler.flush()
-            
-    print("\n" + "="*60)
-    print("🚨 OCORREU UM ERRO FATAL NO APLICATIVO:")
-    print("="*60)
-    traceback.print_exception(exc_type, exc_value, exc_traceback)
-    print("="*60)
-    input("\nPressione ENTER para fechar a janela...")
-    sys.exit(1)
-
-# Configura o Python para usar nossa função em qualquer erro não tratado
-sys.excepthook = _global_exception_handler
+# import logging
 
 import os
 import time
@@ -44,6 +19,39 @@ from bot.notifier import enviar_mensagem_telegram, enviar_documento_telegram, en
 from bot.updater import check_and_update
 from bot.logger_config import setup_logger
 
+
+logger, caminho_log = setup_logger()
+
+def _global_exception_handler(exc_type, exc_value, exc_traceback):
+    # Ignorar Ctrl+C (KeyboardInterrupt)
+    if issubclass(exc_type, KeyboardInterrupt):
+        sys.__excepthook__(exc_type, exc_value, exc_traceback)
+        return
+        
+    # Tenta obter o logger se já estiver sido inicializado
+    if logger.handlers:
+        logger.critical("ERRO FATAL NÃO TRATADO:", exc_info=(exc_type, exc_value, exc_traceback))
+        # Garante que o log seja gravado no arquivo imediatamente
+        for handler in logger.handlers:
+            handler.flush()
+            
+        # Envia o log de erro via Telegram automaticamente
+        try:
+            enviar_log_erro(f"ERRO FATAL NO APLICATIVO:\n{exc_value}", caminho_log)
+        except Exception as e:
+            print(f"Falha ao enviar log para o Telegram: {e}")
+            
+    print("\n" + "="*60)
+    print("🚨 OCORREU UM ERRO FATAL NO APLICATIVO:")
+    print("="*60)
+    traceback.print_exception(exc_type, exc_value, exc_traceback)
+    print("="*60)
+    input("\nPressione ENTER para fechar a janela...")
+    sys.exit(1)
+
+# Configura o Python para usar nossa função em qualquer erro não tratado
+sys.excepthook = _global_exception_handler
+
 def formatar_data_para_api(data_obj: date) -> str:
     return data_obj.strftime("%d-%m-%Y")
 
@@ -61,8 +69,8 @@ def verificar_cpf_ja_processado(cursor, cpf, page, logger):
         return True
     return False
 
+
 def main():
-    logger, caminho_log = setup_logger()
     
     import sys
     

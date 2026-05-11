@@ -1,92 +1,288 @@
-# Manual de Uso - Robô Consulta INSS
+# Bot Meu INSS - RPA de Extração de Dados
 
-Bem-vindo(a) ao **Robô Consulta INSS**! 
-Este programa foi desenvolvido para facilitar e automatizar a forma como você consulta dados de clientes no sistema gov.br e no Meu INSS. Ele faz todo o trabalho manual e repetitivo por você, gerando relatórios organizados e baixando os arquivos necessários.
+Robô de Automação de Processos (RPA) desenvolvido em Python para automatizar a consulta de dados de beneficiários do INSS através dos portais gov.br e Meu INSS.
 
-Abaixo, você encontrará um guia completo e simples de como utilizar o robô no seu dia a dia.
+## 📋 Visão Geral
 
----
+Este projeto implementa um crawler web inteligente que automatiza o processo de extração de informações de histórico de créditos do INSS. O bot realiza login automático, navega pelos portais governamentais e extrai dados estruturados sobre implantações de benefícios, incluindo valores, datas de pagamento e dados bancários.
 
-## 1. O que o Robô é capaz de fazer?
-
-O robô age como um assistente virtual que realiza as seguintes tarefas de forma totalmente automática:
-
-* **Acessa o portal gov.br:** Ele abre o navegador e preenche o CPF e a Senha do seu cliente.
-* **Resolve as burocracias de acesso:** Ele consegue passar pelas telas iniciais para chegar diretamente ao portal do "Meu INSS".
-* **Extrai informações valiosas:** Ele verifica os dados do histórico de créditos, buscando datas de previsão de pagamento, valores totais e bancos cadastrados referentes a implantações de benefícios.
-* **Baixa documentos:** Ele faz o download automático dos relatórios de crédito (Extratos em PDF) e salva os arquivos com os nomes dos seus clientes.
-* **Gera relatórios organizados:** Ao final do processo, ele cria uma planilha do Excel novinha, onde junta as informações que você passou com os resultados que ele encontrou (Valor, Banco, Status da Implantação, etc.).
-* **Organiza tudo em um arquivo ZIP:** Ele compacta todos os PDFs e a planilha final em um único arquivo, pronto para você enviar para sua equipe ou armazenar.
-* **Avisa sobre falhas:** Ele é capaz de dizer se a senha estava errada, se faltou algum dado ou se havia alguma inconsistência cadastral com o cliente lá no sistema do INSS.
+O sistema foi projetado para processar lotes de clientes de forma resiliente, com suporte a retomada inteligente em caso de falhas, retry automático para erros temporários e geração de relatórios em Excel e PDF.
 
 ---
 
-## 2. Preparando os Arquivos (Onde colocar a planilha?)
+## 🎯 Funcionalidades Principais
 
-Para que o robô saiba quais clientes pesquisar, ele precisa de uma lista. 
+### Automação de Login e Autenticação
+- **Acesso ao gov.br**: Preenche credenciais (CPF e senha) de forma segura e humanizada
+- **Detecção de autenticação de dois fatores (2FA)**: Identifica quando a conta requer 2FA e aborta graciosamente
+- **Tratamento de erros de login**: Classifica falhas (senha incorreta, usuário bloqueado, etc.)
+- **Retry automático**: Implementa tentativas automáticas com backoff exponencial para erros transitórios (timeouts, erros 502)
 
-1. **Localize a pasta "**`input`**":** Dentro da pasta principal que você recebeu (onde estão os programas do robô), existe uma pasta chamada `input`.
-2. **Coloque sua planilha lá:** Você deve colocar a sua planilha do Excel (com as colunas de "CLIENTE", "CPF", "SENHA GOV", etc.) **dentro** desta pasta `input`.
-3. **Formato correto:** Não se preocupe com o robô se perder: contanto que seja a única planilha do Excel dentro da pasta `input`, ele a encontrará automaticamente.
+### Extração de Dados
+- **Histórico de Créditos**: Busca dados de beneficiários através da API do Meu INSS
+- **Análise de Implantações**: Processa regras de negócio para identificar estatuto de implantação vs PAB
+- **Download de Extratos**: Realiza o download automático de PDFs de extrato para clientes com implantações pendentes
 
-> ⚠️ **Atenção:** Nunca esqueça de garantir que as senhas e os CPFs estão corretamente preenchidos na sua planilha antes de iniciar!
+### Processamento em Lote
+- **Retomada Inteligente**: Rastreia progresso em SQLite e retoma de onde parou em caso de interrupção
+- **Verificação de Duplicatas**: Detecta usuários já processados no banco e desconecta antes de reprocessar
+- **Rate Limiting**: Implementa pausas entre requisições para evitar bloqueios
 
----
+### Relatório e Exportação
+- **Relatório Excel**: Gera planilhas com colunas estruturadas (CONSULTA, MOTIVO, AÇÃO, etc.)
+- **Arquivos ZIP**: Compacta relatórios e PDFs para distribuição
+- **Notificações Telegram**: Envia alertas e logs de erro via bot Telegram
 
-## 3. Como usar o Bot passo a passo
-
-Utilizar o robô é muito fácil. Siga o passo a passo:
-
-### Passo 1: Iniciar o programa
-Vá até a pasta onde todos os arquivos estão e localize o arquivo principal chamado **`Bot_INSS.exe`** (ou um nome similar com o ícone de executável). Dê **dois cliques** sobre ele.
-
-### Passo 2: O Terminal (A tela preta)
-Uma janela preta (parecida com a tela do MS-DOS) vai se abrir. Não se assuste! Esse é o painel de comunicação do robô com você. É por ali que ele vai escrever tudo o que está fazendo no momento, como: *"Processando João da Silva"*, *"Login concluído"*, *"Baixando PDF"*, etc. 
-
-### Passo 3: O Navegador automático
-O robô abrirá o Google Chrome sozinho. Você verá as páginas do Gov.br e do Meu INSS sendo abertas e preenchidas como se houvesse um "fantasma" digitando. 
-* **Regra de Ouro:** Quando o robô estiver trabalhando, **não clique na janela do navegador dele**, não minimize e não tente navegar junto com ele. Deixe as mãos fora do mouse e do teclado enquanto a janela estiver em primeiro plano, para não atrapalhar o processo.
-
-### Passo 4: Fim da operação
-Quando ele terminar de buscar toda a sua lista, ele avisará na tela preta. O navegador irá fechar sozinho. E a tela preta pedirá para você apertar **"ENTER"** para fechar. Sua pasta de relatórios estará pronta!
-
----
-
-## 4. Onde encontrar o resultado do trabalho?
-
-Sempre que o robô finaliza o seu trabalho, ele cria ou atualiza uma pasta chamada **`output`** (que significa "saída") no mesmo local onde o robô está instalado.
-
-Dentro desta pasta, você encontrará:
-* **Pasta `Pdfs`:** Onde estão armazenados todos os extratos em documento dos clientes que deram certo.
-* **Arquivo ZIP:** Um "pacote" que contém tanto a sua planilha nova totalmente preenchida quanto os Pdfs para facilitar o envio ou o backup do dia.
-* Você notará que na sua planilha final, aparecerão novas colunas detalhando o valor encontrado, o banco e se a pesquisa resultou em *"Sucesso"* ou *"Senha Não Confere"*.
+### Tratamento de Erros
+- **Classificação de Falhas**: Categoriza erros em tipos específicos (Falha Extração, Falha hiscre, Senha Não Confere, etc.)
+- **Log Estruturado**: Registra classificação, código de erro e mensagens descritivas
+- **Notificação imediata**: Envia arquivo de log ao Telegram quando exceções não tratadas ocorrem
 
 ---
 
-## 5. Atualização Automática (É tudo sozinho!)
+## 🏗️ Arquitetura
 
-Seu robô está configurado para se manter sempre inteligente e na melhor versão possível.
+### Módulos Principais
 
-* **Como funciona:** Toda vez que você abre o programa, nos primeiros segundos, ele verifica na internet se seu desenvolvedor liberou uma versão mais moderna do robô.
-* **O que acontece:** Se houver uma atualização, o robô vai baixar a nova versão sozinho. O terminal (a tela preta) vai avisar que atualizou e, em seguida, ele informará que precisa ser fechado.
-* **O que você deve fazer:** Basta seguir as instruções na tela preta: aperte a tecla **ENTER** para que a tela feche. E então é só você **abrir o programa novamente** clicando duas vezes nele, e a versão nova já estará funcionando perfeitamente!
+```
+bot/
+├── browser.py            # Automação Playwright (login, navegação)
+├── api_client.py         # Cliente HTTP para APIs do Meu INSS
+├── parser.py             # Análise de JSON e aplicação de regras de negócio
+├── report_generator.py   # Geração de Excel e ZIP
+├── notifier.py           # Integração com Telegram
+├── logger_config.py      # Configuração centralizada de logging
+└── updater.py            # Verificação e atualização automática
+
+main.py                    # Orquestrador principal
+input_reader.py            # Leitura de entrada (Excel)
+tests/                     # Suite de testes com mocks
+```
+
+### Fluxo de Execução
+
+```
+1. Leitura da Planilha de Entrada
+   └─> Lê Excel de input/ com CPFs e senhas
+
+2. Verificação de Retomada
+   └─> Consulta SQLite para CPFs já processados
+
+3. Loop de Processamento (por cliente)
+   ├─> Verificação de Duplicata no banco
+   ├─> Login via Playwright
+   │   ├─> Preenche CPF (humanizado)
+   │   ├─> Aguarda tela de senha
+   │   ├─> Preenche senha (humanizado)
+   │   ├─> Detecta erros (2FA, bloqueio, datossuspeitos)
+   │   ├─> Retry em erros 502 com reload
+   │   └─> Intercepta tokens (Bearer token, miToken)
+   ├─> Consulta API Meu INSS
+   │   ├─> Histórico de Créditos (GET /hiscre)
+   │   └─> Download PDF (GET /extrato)
+   ├─> Análise de Regras
+   │   ├─> Verifica implantação (data, valor, banco)
+   │   ├─> Classifica como IMPLANTAÇÃO/PAB/NÃO_IMPLANTADO
+   ├─> Classificação de Erro (se aplicável)
+   │   ├─> 404 → Sucesso (sem dados)
+   │   ├─> 401/403 → Sessão não autorizada
+   │   ├─> 500/503 → Serviço indisponível
+   └─> Salva em SQLite
+
+4. Geração de Relatório
+   ├─> Lê todos os registros do SQLite
+   ├─> Aplica regras de coloração Excel (verde/vermelho)
+   ├─> Gera planilha final
+   ├─> Cria ZIP com PDFs
+   └─> Envia resumo via Telegram
+```
 
 ---
 
-## 6. Agendando para rodar sozinho
+## 💻 Tecnologias Utilizadas
 
-Se você não quiser abrir o programa manualmente todo dia e preferir que ele acorde e ligue sozinho na sua máquina, siga este passo a passo extra:
+### Linguagem e Framework
+- **Python 3.8+**: Linguagem principal
+- **Playwright**: Automação de navegador (headless e GUI)
+- **Playwright Stealth**: Bypass de detecção de automação
 
-Junto com os arquivos do robô, você recebeu outro aplicativo chamado **`agendar.exe`** (ou `agendar`).
+### Processamento de Dados
+- **Pandas**: Manipulação de DataFrames Excel
+- **SQLite3**: Banco de dados local para cache e retomada
+- **OpenPyXL**: Geração de planilhas Excel com estilos
 
-1. Garanta que a sua planilha com os clientes do dia já está lá dentro da pasta `input`.
-2. Dê **dois cliques** no arquivo **`agendar.exe`**.
-3. Ele fará uma rápida configuração no seu Windows.
-4. Feito! O Windows foi programado para "acordar" o robô **automaticamente todos os dias às 08:30 da manhã**. 
+### Integração e Comunicação
+- **Requests**: Cliente HTTP para APIs
+- **python-dotenv**: Gerenciamento de variáveis de ambiente
+- **Telegram Bot API**: Notificações em tempo real
 
-Sempre que der 08:30 da manhã, a tela preta e o navegador vão se abrir sozinhos no seu computador e já começarão a pesquisar a planilha que estiver salva lá.
+### Desenvolvimento e Utilitários
+- **logging**: Logging estruturado e rotativo
+- **dateutil**: Manipulação de datas
+- **zipfile**: Compressão de arquivos
+- **tempfile**: Gerenciamento de arquivos temporários
 
-### Dicas Finais
-* Deixe os arquivos e pastas sempre juntos. Nunca mova o `.exe` principal para fora da pasta dele, ou ele não saberá onde encontrar a sua planilha ou onde guardar os resultados. Se quiser criar um atalho na sua Área de Trabalho, clique com o botão direito nele e escolha "Criar atalho", e mova apenas o atalho.
-* Caso falte energia ou o programa seja fechado agressivamente no meio de uma consulta, não se preocupe! O robô tem uma "memória inteligente": quando você abri-lo de novo, ele retomará de onde parou, não pesquisando os clientes que já tinham sido finalizados.
-* Caso ocorra um erro, não é necessário mandar nenhum arquivo de log para o desenvolvedor. Basta avisar o ocorrido que ele irá analisar, remotamente, o que pode ter acontecido. Tendo resolvido o problema, ao abrir o bot novamente, ele fará a atualização automática (Como dito do item 5) e o problema corrigido. 
+---
+
+## 📋 Requisitos de Entrada
+
+O bot espera um arquivo Excel na pasta `input/` com as seguintes colunas:
+
+| Coluna | Tipo | Obrigatório | Descrição |
+|--------|------|-------------|-----------|
+| CLIENTE | String | ✅ | Nome do cliente |
+| CPF | String | ✅ | CPF com ou sem formatação |
+| SENHA GOV | String | ✅ | Senha do gov.br |
+| PROCESSO | String | ❌ | Número do processo |
+| TIPO DE PROCESSO | String | ❌ | Classificação |
+| GRUPO DE PROCESSO | String | ❌ | Agrupamento |
+| ESFERA | String | ❌ | Administrativa/Judiciária |
+| PARCEIRO | String | ❌ | Nome do parceiro |
+| LÍDER | String | ❌ | Responsável |
+| PETICIONANTE | String | ❌ | Solicitante |
+| DATA DE INCLUSÃO | Date | ❌ | Data de registro |
+
+---
+
+## 📤 Formato de Saída
+
+### Planilha Final (output/Implantação DD.MM.YYYY.xlsx)
+
+Colunas:
+- **CONSULTA**: Status (Sucesso, Falha no hiscre, Senha Não Confere, etc.)
+- **MOTIVO**: Razão específica do erro (ex: "Sessão não autorizada")
+- **AÇÃO**: Ação recomendada (ex: "Conferir o cliente manualmente")
+- **[Dados do cliente + resultados da API]**
+- **IMPLANTAÇÃO**: Status (ALERTA DE IMPLANTAÇÃO, Não Implantado, etc.)
+- **PAB**: Status do PAB
+- **DATA**: Data de previsão de pagamento
+- **VALOR**: Valor total do crédito
+- **BANCO**: Código/nome do banco
+
+### Arquivo ZIP (output/Implantação DD.MM.YYYY.zip)
+
+```
+Implantação DD.MM.YYYY.zip
+├── Implantação DD.MM.YYYY.xlsx
+└── PDFs/
+    ├── Cliente1.pdf
+    ├── Cliente2.pdf
+    └── ...
+```
+
+---
+
+## 🛠️ Setup e Instalação
+
+### Para Desenvolvedores
+
+1. Clone o repositório:
+   ```bash
+   git clone https://github.com/FranciscoAlveJr/Bot-Meu-INSS.git
+   cd Bot-Meu-INSS
+   ```
+
+2. Crie um ambiente virtual:
+   ```bash
+   python -m venv .venv
+   .venv\Scripts\activate  # Windows
+   source .venv/bin/activate  # Linux/Mac
+   ```
+
+3. Instale dependências:
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+4. Configure variáveis de ambiente (`.env`):
+   ```env
+   TELEGRAM_BOT_TOKEN=seu_token_aqui
+   TELEGRAM_CHAT_ID=seu_chat_id_aqui
+   ```
+
+5. Execute:
+   ```bash
+   python main.py
+   ```
+
+### Para Usuários Finais
+
+Faça download do executável `Bot_INSS.exe` da seção de Releases. Coloque sua planilha na pasta `input/` e execute o .exe.
+
+---
+
+## 🔍 Tratamento de Erros
+
+O bot classifica exceções em categorias específicas:
+
+| Classificação | HTTP | Descrição | Ação |
+|---|---|---|---|
+| Sucesso | 200 | Dados extraídos com sucesso | Nenhuma |
+| Sucesso (Dados Ausentes) | 404 | Sem histórico de créditos | Marca como "Não Implantado" |
+| Falha no hiscre | 401/403/500/503 | Erro na API | Conferir cliente manualmente |
+| Falha na extração | - | Erro genérico de parsing | Verificar dados cadastrais |
+| Exige 2 Fatores | - | Autenticação 2FA ativada | Desativar com cliente |
+| Senha Não Confere | - | Credencial inválida | Revisar credencial |
+| Usuário Bloqueado | - | Conta suspensa/bloqueada | Regularizar no Gov.br |
+| Senha Não Fornecida | - | Campo vazio ou NaN | Solicitar ao cliente |
+
+---
+
+## 📊 Estatísticas Geradas
+
+Ao final da execução, o bot gera um resumo com:
+- Total de sucessos
+- Total de implantações/PAB encontrados
+- Total de não implantados
+- Falhas de extração (técnicas e hiscre)
+- Falhas de autenticação (senha, 2FA, bloqueio)
+- Senhas não fornecidas
+
+---
+
+## 📝 Logging
+
+Logs são salvos em `output/logs/` com rotina diária. Cada execução gera um arquivo `.log` contendo:
+- Timestamp de cada evento
+- CPF processado
+- Status e classificação
+- Erros e exceções completos
+
+Em caso de exceção genérica, o arquivo de log é enviado automaticamente via Telegram para diagnóstico remoto.
+
+---
+
+## 🧪 Testes
+
+Para executar a suite de testes com mocks (sem fazer chamadas reais à API):
+
+```bash
+python tests/main_test.py
+```
+
+Os testes simulam:
+- Login bem-sucedido
+- Resposta de API mockada
+- Geração de relatório
+- Sem aguardas de rede
+
+---
+
+## 📄 Licença
+
+Este projeto é fornecido como ferramenta interna. Consulte o arquivo LICENSE para detalhes.
+
+---
+
+## 👥 Suporte e Contribuições
+
+Para relatar bugs ou solicitar funcionalidades, abra uma Issue. Para contribuir com código, envie um Pull Request.
+
+---
+
+## ⚠️ Notas Importantes
+
+- **Dados Sensíveis**: Este bot lida com CPFs e senhas. Armazene credenciais com segurança e nunca compartilhe arquivos com dados sensíveis.
+- **Conformidade**: Confirme a conformidade legal antes de usar em produção (LGPD, termos de serviço gov.br).
+- **Rate Limiting**: O bot implementa pausas entre requisições (1s) para não sobrecarregar os servidores.
+- **Autossuficiente**: A retomada inteligente permite que o bot seja pausado e retomado sem perda de progresso. 
